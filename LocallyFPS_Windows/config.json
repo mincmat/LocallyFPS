@@ -1,0 +1,9 @@
+{
+  "language": "es",
+  "encoder": "libx264",
+  "crf": 16,
+  "preset": "fast",
+  "model": "rife-v4.6",
+  "video_preset": "custom",
+  "rife_threads": "2:6:6"
+}
