@@ -1,79 +1,102 @@
 # LocallyFPS ⚡
 
-**LocallyFPS** is a cross-platform tool that uses AI to increase video **FPS (frames per second)** through frame interpolation. It leverages the **RIFE (Real-Time Intermediate Flow Estimation)** model with GPU acceleration via Vulkan. All processing is done **locally** — no cloud dependency.
+**Make your videos look smoother with AI.**
 
-## How it works
+Have you ever watched a video and thought, "This would look so much better with more FPS"? LocallyFPS does exactly that — it uses artificial intelligence to **create new frames** between the existing ones, making movement much smoother.
+
+- 30 FPS video → 60 FPS video (double the smoothness)
+- 24 FPS movie → 60 FPS movie (looks like a modern TV)
+
+And all of this happens **on your computer** — no internet needed once it's set up.
+
+---
+
+## How does it work? 🤔
+
+Imagine a flipbook animation. Normally you have 30 drawings per second. LocallyFPS looks at drawing #1 and drawing #2, then **draws a new drawing in between** that looks natural. Now you have 60 drawings per second.
 
 ```
-Input video → Extract PNG frames → RIFE (AI) → Interpolate frames → Reassemble video → Enhanced video
+[Frame 1] → [AI draws Frame 1.5] → [Frame 2] → [AI draws Frame 2.5] → [Frame 3]...
 ```
 
-## Features
+The result: **buttery smooth video.**
 
-- **AI interpolation** — Uses RIFE v4.6 (rife-ncnn-vulkan) to generate realistic intermediate frames
-- **GPU support** — NVIDIA, AMD, Intel, and Apple Silicon (M1–M5)
-- **Interactive wizard** — Arrow-key menu with step-by-step guidance
-- **CLI mode** — For automated or batch processing
-- **Cross-platform** — Linux, macOS, and Windows
-- **Multi-language** — English and Spanish
-- **Hardware acceleration** — NVENC, AMF, QSV, VAAPI, VideoToolbox
-- **Self-contained** — Auto-downloads ffmpeg and rife-ncnn-vulkan
+---
 
-## Platforms
+## Which platform do you use?
 
-| Platform | Launcher |
+| Your computer | What to open |
 |---|---|
-| Linux | `LocallyFPS_Linux/start.sh` |
-| macOS | `LocallyFPS_macOS/start.command` |
-| Windows | `LocallyFPS_Windows/start.bat` |
+| 🐧 Linux | `LocallyFPS_Linux/start.sh` |
+| 🍎 macOS | `LocallyFPS_macOS/start.command` |
+| 🪟 Windows | `LocallyFPS_Windows/start.bat` |
 
-## Requirements
+---
 
-- **Python 3.8+**
-- **Vulkan-compatible GPU** (recommended for performance)
-- **8 GB+ RAM** recommended
-- Disk space for temporary frames
+## What do you need? 📋
 
-## Quick start
+- **A video file** you want to make smoother.
+- **A computer with a graphics card** (GPU) — Most modern computers have one. It will still work without one, but it'll be slower.
+- **Patience** — Processing video takes time. A 5-minute video might take 10-30 minutes depending on your computer.
 
-```bash
-# Linux
-cd LocallyFPS_Linux && bash start.sh
+---
 
-# macOS
-Double-click LocallyFPS_macOS/start.command
+## How to use it 🪜
 
-# Windows
-Double-click LocallyFPS_Windows/start.bat
-```
+### Step 1: Open the program
 
-Follow the interactive wizard:
-1. Select the video file
-2. Choose the target FPS
-3. Adjust settings (optional)
-4. Wait for processing!
+Double-click the launcher file for your system (see the table above).
 
-## CLI (Linux/macOS)
+### Step 2: Follow the wizard
 
-```bash
-python3 fps_enhancer.py --input video.mp4 --fps 60 --encoder libx264
-```
+The program will guide you step by step:
 
-## Configuration
+1. **Select your video** — Browse and pick the file.
+2. **Choose target FPS** — 60 FPS is a good choice. 30 → 60 doubles the smoothness.
+3. **Pick quality** — "Balanced" works great for most people.
+4. **Wait** — The program will show you a progress bar. This is the AI working.
 
-Edit `config.json` to customize:
-- `encoder` — Video codec (libx264, libx265, h264_nvenc, etc.)
-- `crf` — Quality (lower = better, recommended 16–20)
-- `preset` — Encoding speed (fast, balanced, quality)
-- `model` — RIFE model (rife-v4.6, rife-v4, etc.)
-- `rife_threads` — RIFE threads (e.g. `2:6:6`)
+### Step 3: Find your enhanced video
 
-## Credits
+When it's done, you'll find the new video with "ENHANCED" in its name, right next to the original.
 
-- [RIFE](https://github.com/hzwer/ECCV2022-RIFE) — Frame interpolation algorithm
-- [ncnn](https://github.com/Tencent/ncnn) — Neural network inference framework
-- [rife-ncnn-vulkan](https://github.com/nihui/rife-ncnn-vulkan) — Vulkan implementation of RIFE
+---
+
+## How long will it take? ⏱️
+
+This depends on:
+
+| Factor | Fast 🚀 | Slow 🐢 |
+|---|---|---|
+| Your graphics card | Good GPU | No GPU or old GPU |
+| Video length | Short (1 min) | Long (30 min) |
+| Video resolution | 720p | 4K |
+| Target FPS | 30 → 60 | 30 → 120 |
+
+**Examples:**
+- A 30-second 1080p clip on a good GPU: **2-5 minutes**
+- A 10-minute 4K video on an old laptop: **1-2 hours**
+
+---
+
+## Pro tips 💡
+
+- **Wanna test it?** Use a very short clip (10-15 seconds) first to see if you like the result.
+- **Gaming videos** look amazing with interpolation.
+- **Anime and cartoons** also work great.
+- **Tutorials or lectures** don't benefit much — stick to action/motion content.
+
+---
+
+## How is this different from those online AI tools? 🔒
+
+- **Totally free** — No subscriptions or credits.
+- **100% private** — Your video never leaves your computer.
+- **No limits** — Process as many videos as you want.
+- **No watermark** — The result is clean.
+
+---
 
 ## License
 
-This project is open source.
+Free to use.
