@@ -1,57 +1,57 @@
 # LocallyFPS ⚡
 
-**LocallyFPS** es una herramienta multiplataforma que utiliza inteligencia artificial para aumentar los **FPS (fotogramas por segundo)** de videos mediante interpolación de cuadros. Emplea el modelo **RIFE (Real-Time Intermediate Flow Estimation)** con aceleración por GPU vía Vulkan. Todo el procesamiento se realiza **localmente**, sin depender de servicios en la nube.
+**LocallyFPS** is a cross-platform tool that uses AI to increase video **FPS (frames per second)** through frame interpolation. It leverages the **RIFE (Real-Time Intermediate Flow Estimation)** model with GPU acceleration via Vulkan. All processing is done **locally** — no cloud dependency.
 
-## Cómo funciona
+## How it works
 
 ```
-Video original → Extraer cuadros PNG → RIFE (IA) → Interpolar cuadros → Reensamblar video → Video mejorado
+Input video → Extract PNG frames → RIFE (AI) → Interpolate frames → Reassemble video → Enhanced video
 ```
 
-## Características
+## Features
 
-- **Interpolación con IA** — Usa RIFE v4.6 (rife-ncnn-vulkan) para generar cuadros intermedios realistas
-- **Soporte para GPU** — NVIDIA, AMD, Intel y Apple Silicon (M1-M5)
-- **Interfaz interactiva** — Menú con teclas de flecha y asistente paso a paso
-- **Modo CLI** — Para uso automatizado o por lotes
-- **Multiplataforma** — Linux, macOS y Windows
-- **Multi-idioma** — Español e Inglés
-- **Aceleración por hardware** — Soporte para NVENC, AMF, QSV, VAAPI, VideoToolbox
-- **Auto-instalación** — Descarga e instala ffmpeg y rife-ncnn-vulkan automáticamente
+- **AI interpolation** — Uses RIFE v4.6 (rife-ncnn-vulkan) to generate realistic intermediate frames
+- **GPU support** — NVIDIA, AMD, Intel, and Apple Silicon (M1–M5)
+- **Interactive wizard** — Arrow-key menu with step-by-step guidance
+- **CLI mode** — For automated or batch processing
+- **Cross-platform** — Linux, macOS, and Windows
+- **Multi-language** — English and Spanish
+- **Hardware acceleration** — NVENC, AMF, QSV, VAAPI, VideoToolbox
+- **Self-contained** — Auto-downloads ffmpeg and rife-ncnn-vulkan
 
-## Plataformas
+## Platforms
 
-| Plataforma | Iniciador |
+| Platform | Launcher |
 |---|---|
 | Linux | `LocallyFPS_Linux/start.sh` |
 | macOS | `LocallyFPS_macOS/start.command` |
 | Windows | `LocallyFPS_Windows/start.bat` |
 
-## Requisitos
+## Requirements
 
 - **Python 3.8+**
-- **GPU compatible con Vulkan** (para rendimiento óptimo)
-- **8 GB+ RAM** recomendados
-- Espacio en disco para cuadros temporales
+- **Vulkan-compatible GPU** (recommended for performance)
+- **8 GB+ RAM** recommended
+- Disk space for temporary frames
 
-## Uso rápido
+## Quick start
 
 ```bash
 # Linux
 cd LocallyFPS_Linux && bash start.sh
 
 # macOS
-Haz doble clic en LocallyFPS_macOS/start.command
+Double-click LocallyFPS_macOS/start.command
 
 # Windows
-Haz doble clic en LocallyFPS_Windows/start.bat
+Double-click LocallyFPS_Windows/start.bat
 ```
 
-Sigue el asistente interactivo:
-1. Selecciona el archivo de video
-2. Elige los FPS objetivo
-3. Ajusta la configuración (opcional)
-4. ¡Espera a que se procese!
+Follow the interactive wizard:
+1. Select the video file
+2. Choose the target FPS
+3. Adjust settings (optional)
+4. Wait for processing!
 
 ## CLI (Linux/macOS)
 
@@ -59,21 +59,21 @@ Sigue el asistente interactivo:
 python3 fps_enhancer.py --input video.mp4 --fps 60 --encoder libx264
 ```
 
-## Configuración
+## Configuration
 
-El archivo `config.json` permite personalizar:
-- `encoder` — Códec de video (libx264, libx265, h264_nvenc, etc.)
-- `crf` — Calidad (menor = mejor, recomendado 16-20)
-- `preset` — Velocidad de codificación (fast, balanced, quality)
-- `model` — Modelo RIFE (rife-v4.6, rife-v4, etc.)
-- `rife_threads` — Hilos para RIFE (ej. `2:6:6`)
+Edit `config.json` to customize:
+- `encoder` — Video codec (libx264, libx265, h264_nvenc, etc.)
+- `crf` — Quality (lower = better, recommended 16–20)
+- `preset` — Encoding speed (fast, balanced, quality)
+- `model` — RIFE model (rife-v4.6, rife-v4, etc.)
+- `rife_threads` — RIFE threads (e.g. `2:6:6`)
 
-## Créditos
+## Credits
 
-- [RIFE](https://github.com/hzwer/ECCV2022-RIFE) — Algoritmo de interpolación de cuadros
-- [ncnn](https://github.com/Tencent/ncnn) — Framework de inferencia neuronal
-- [rife-ncnn-vulkan](https://github.com/nihui/rife-ncnn-vulkan) — Implementación Vulkan de RIFE
+- [RIFE](https://github.com/hzwer/ECCV2022-RIFE) — Frame interpolation algorithm
+- [ncnn](https://github.com/Tencent/ncnn) — Neural network inference framework
+- [rife-ncnn-vulkan](https://github.com/nihui/rife-ncnn-vulkan) — Vulkan implementation of RIFE
 
-## Licencia
+## License
 
-Este proyecto es de uso libre.
+This project is open source.
