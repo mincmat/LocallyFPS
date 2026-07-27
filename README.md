@@ -1,99 +1,136 @@
 # LocallyFPS ⚡
 
-**Make your videos look smoother with AI.**
+**Make your videos look smoother with AI frame interpolation.**
 
-Have you ever watched a video and thought, "This would look so much better with more FPS"? LocallyFPS does exactly that — it uses artificial intelligence to **create new frames** between the existing ones, making movement much smoother.
+LocallyFPS takes a video and creates new frames between the existing ones using artificial intelligence (RIFE model). A 30 FPS video becomes 60 FPS — twice the smoothness.
 
-- 30 FPS video → 60 FPS video (double the smoothness)
-- 24 FPS movie → 60 FPS movie (looks like a modern TV)
-
-And all of this happens **on your computer** — no internet needed once it's set up.
+All processing happens **on your computer**. Nothing is uploaded to the cloud.
 
 ---
 
-## How does it work? 🤔
+## How it works
 
-Imagine a flipbook animation. Normally you have 30 drawings per second. LocallyFPS looks at drawing #1 and drawing #2, then **draws a new drawing in between** that looks natural. Now you have 60 drawings per second.
-
-```
-[Frame 1] → [AI draws Frame 1.5] → [Frame 2] → [AI draws Frame 2.5] → [Frame 3]...
-```
-
-The result: **buttery smooth video.**
+1. Extracts every frame of your video as images (PNG files).
+2. Uses AI (RIFE) to generate **new in-between frames** — for example, it looks at frame 1 and frame 2, then creates a brand new frame 1.5 that fits naturally between them.
+3. Reassembles everything into a new video file with the original audio.
 
 ---
 
-## Which platform do you use?
+## What you need
 
-| Your computer | What to open |
+- **A video file** (MP4, MKV, AVI, MOV, WEBM, or FLV)
+- **A graphics card with Vulkan support** (most NVIDIA, AMD, Intel, and Apple Silicon GPUs work). It can run without one but will be much slower.
+- **Python 3**
+- **Patience** — processing video takes time. A short clip can take minutes; longer videos can take hours.
+
+---
+
+## How to use it
+
+### 1. Place your video
+
+Put your video file inside the `videos/original/` folder.
+
+### 2. Run the launcher
+
+| Your OS | File to run |
 |---|---|
-| 🐧 Linux | `LocallyFPS_Linux/start.sh` |
-| 🍎 macOS | `LocallyFPS_macOS/start.command` |
-| 🪟 Windows | `LocallyFPS_Windows/start.bat` |
+| Linux | `LocallyFPS_Linux/start.sh` (double-click or run in terminal) |
+| macOS | `LocallyFPS_macOS/start.command` (double-click) |
+| Windows | `LocallyFPS_Windows/start.bat` (double-click) |
 
----
+The first time you run it, it will:
+1. Ask you to pick a language (English or Spanish).
+2. Install dependencies like `ffmpeg` and `rife-ncnn-vulkan` automatically.
 
-## What do you need? 📋
+### 3. Select "Enhance video"
 
-- **A video file** you want to make smoother.
-- **A computer with a graphics card** (GPU) — Most modern computers have one. It will still work without one, but it'll be slower.
-- **Patience** — Processing video takes time. A 5-minute video might take 10-30 minutes depending on your computer.
+```
+  ▸ Enhance video
+    Settings
+    Exit
+```
 
----
+Use **↑** and **↓** then **Enter** to select.
 
-## How to use it 🪜
+### 4. Pick your video
 
-### Step 1: Open the program
+The program shows all videos found in `videos/original/`. Select the one you want.
 
-Double-click the launcher file for your system (see the table above).
+### 5. Enter the target FPS
 
-### Step 2: Follow the wizard
+Type a number and press Enter. Common options:
 
-The program will guide you step by step:
-
-1. **Select your video** — Browse and pick the file.
-2. **Choose target FPS** — 60 FPS is a good choice. 30 → 60 doubles the smoothness.
-3. **Pick quality** — "Balanced" works great for most people.
-4. **Wait** — The program will show you a progress bar. This is the AI working.
-
-### Step 3: Find your enhanced video
-
-When it's done, you'll find the new video with "ENHANCED" in its name, right next to the original.
-
----
-
-## How long will it take? ⏱️
-
-This depends on:
-
-| Factor | Fast 🚀 | Slow 🐢 |
+| Original FPS | Target FPS | Result |
 |---|---|---|
-| Your graphics card | Good GPU | No GPU or old GPU |
-| Video length | Short (1 min) | Long (30 min) |
-| Video resolution | 720p | 4K |
-| Target FPS | 30 → 60 | 30 → 120 |
+| 30 FPS | 60 | Doubles the frames — much smoother |
+| 24 FPS (film) | 60 | Makes movies look like modern video |
+| 30 FPS | 120 | Very smooth, needs more processing |
 
-**Examples:**
-- A 30-second 1080p clip on a good GPU: **2-5 minutes**
-- A 10-minute 4K video on an old laptop: **1-2 hours**
+### 6. Confirm and wait
+
+The program will show a summary and ask for confirmation. Then it starts working:
+
+```
+Extracting frames...  ████████████████░░░░  (progress bar)
+Interpolating frames.. ████████████████████  (progress bar)
+Encoding video...     [✓]
+```
+
+### 7. Find your enhanced video
+
+The result is saved in `videos/enhanced/` with a name like `ENHANCED_60FPS_filename.mp4`.
 
 ---
 
-## Pro tips 💡
+## How long will it take?
 
-- **Wanna test it?** Use a very short clip (10-15 seconds) first to see if you like the result.
-- **Gaming videos** look amazing with interpolation.
-- **Anime and cartoons** also work great.
-- **Tutorials or lectures** don't benefit much — stick to action/motion content.
+| Video | Resolution | GPU | Approximate time |
+|---|---|---|---|
+| 30 seconds, 1080p | 1920x1080 | Good GPU (RTX 3060+) | 2-5 minutes |
+| 30 seconds, 1080p | 1920x1080 | Integrated GPU | 10-20 minutes |
+| 5 minutes, 4K | 3840x2160 | Good GPU | 30-60 minutes |
+| 30 seconds, 720p | 1280x720 | No GPU (CPU only) | 20-40 minutes |
 
 ---
 
-## How is this different from those online AI tools? 🔒
+## Settings menu (optional)
 
-- **Totally free** — No subscriptions or credits.
-- **100% private** — Your video never leaves your computer.
-- **No limits** — Process as many videos as you want.
-- **No watermark** — The result is clean.
+From the main menu, select **Settings** to change:
+
+- **Language** — Switch between English and Spanish
+- **Encoder** — Video codec (`libx264`, `libx265`, `h264_nvenc` for NVIDIA, etc.)
+- **CRF** — Quality (lower = better quality, bigger file). Default: 16, Range: 0-51
+- **ffmpeg preset** — Encoding speed vs file size (`fast`, `medium`, `slow`, etc.)
+- **Model** — RIFE AI model version (`rife-v4.6` is the default)
+
+These are already set to sensible defaults — you can ignore them and it works fine.
+
+---
+
+## CLI mode (advanced)
+
+```bash
+python3 fps_enhancer.py --input videos/original/myvideo.mp4 --target-fps 60
+```
+
+---
+
+## Tips
+
+- **Test with a short clip first** (10-15 seconds) to see if you like the result.
+- **Gaming videos and action scenes** benefit the most from interpolation.
+- **Anime** also works well.
+- **Tutorials, interviews, or slow scenes** won't show much difference.
+
+---
+
+## Why use this instead of an online tool?
+
+- **100% free** — no subscriptions or credits
+- **100% private** — your video never leaves your computer
+- **No watermark** — clean output
+- **No limits** — process as many videos as you want
 
 ---
 
