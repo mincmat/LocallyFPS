@@ -1410,12 +1410,59 @@ def reassemble_video(
 
     process.wait()
     stderr_thread.join(timeout=3)
-    sp.ok(_("Encoding video"))
+
+    if process.returncode != 0 and enc["codec"] != "libx264":
+        tail = "".join(stderr_buf)
+        status(f"{_('Hardware encoder')} {enc['codec']} {_('failed, falling back to libx264.')}", "WARN")
+        enc = ENCODER_PRESETS["libx264"]
+        ffmpeg_hw = None
+        cmd = [FFMPEG_BIN, "-y", "-threads", "auto",
+               "-r", str(target_fps), "-i", str(out_frames_dir / "%08d.png")]
+        if has_audio:
+            cmd += ["-i", str(original_video)]
+        cmd += ["-map", "0:v:0"]
+        if has_audio:
+            cmd += ["-map", "1:a:0"]
+        cmd += ["-c:v", enc["codec"], "-crf", str(crf), "-preset", preset,
+                "-pix_fmt", enc["pix_fmt"]]
+        if has_audio:
+            cmd += ["-c:a", "aac", "-b:a", "192k"]
+        cmd += ["-t", str(video_duration), str(output_path)]
+        sp = Spinner(_("Encoding video (libx264 fallback)"))
+        cmd_prog = [FFMPEG_BIN, "-y", "-progress", "pipe:1"] + cmd[2:]
+        process = subprocess.Popen(cmd_prog, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1)
+        stderr_buf = []
+        stderr_lock = threading.Lock()
+        def _read_stderr2():
+            while True:
+                chunk = process.stderr.read(65536)
+                if not chunk:
+                    break
+                with stderr_lock:
+                    stderr_buf.append(chunk)
+                    while len(stderr_buf) > 20:
+                        stderr_buf.pop(0)
+        stderr_thread = threading.Thread(target=_read_stderr2, daemon=True)
+        stderr_thread.start()
+        for line in process.stdout:
+            m = time_re.search(line)
+            if m:
+                h, mi, s = int(m.group(1)), int(m.group(2)), int(m.group(3))
+                frac = m.group(4).ljust(6, "0")[:6]
+                time_elapsed = h * 3600 + mi * 60 + s + int(frac) / 1000000
+                sp.tick()
+                while time.time() - last_update > spinner_timeout:
+                    sp.tick()
+                    last_update = time.time()
+        process.wait()
+        stderr_thread.join(timeout=3)
 
     if process.returncode != 0:
         tail = "".join(stderr_buf)
         status(f"{_('Error reassembling video:')}\n{tail[-3000:]}", "ERROR")
         sys.exit(1)
+
+    sp.ok(_("Encoding video"))
 
 
 # --------------------------------------------------------------------------- #

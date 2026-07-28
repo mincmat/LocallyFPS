@@ -1201,6 +1201,39 @@ def reassemble_video(
     process.wait()
     pbar.close()
 
+    if process.returncode != 0 and enc["codec"] not in ("libx264", "libx265"):
+        status(f"{_('Hardware encoder')} {enc['codec']} {_('failed, falling back to libx264.')}", "WARN")
+        enc = ENCODER_PRESETS["libx264"]
+        cmd = [
+            str(FFMPEG_BIN), "-y",
+            "-framerate", str(target_fps),
+            "-i", f"{out_frames_dir}/%08d.png",
+            "-i", str(original_video),
+            "-c:v", enc["codec"],
+            "-crf", str(crf),
+            "-preset", preset,
+            "-pix_fmt", enc["pix_fmt"],
+        ]
+        if has_audio:
+            cmd += ["-map", "1:a?", "-c:a", "aac", "-b:a", "192k", "-shortest"]
+        cmd += [str(output_path)]
+        desc = _("Reassembling (libx264 fallback)")
+        if HAS_TQDM:
+            pbar = tqdm(total=result_frames, desc=desc, unit="frame", bar_format="{l_bar}{bar:30}{r_bar}")
+        else:
+            pbar = ProgressBar(total=result_frames, desc=desc, unit="frame", width=35)
+        process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
+        for line in process.stdout:
+            m = re.search(r"frame=\s*(\d+)", line)
+            if m:
+                current = int(m.group(1))
+                if HAS_TQDM:
+                    pbar.update(current - pbar.n)
+                else:
+                    pbar.n = current
+        process.wait()
+        pbar.close()
+
     if process.returncode != 0:
         status(_("Reassembly failed. Check the output above."), "ERROR")
         sys.exit(1)
