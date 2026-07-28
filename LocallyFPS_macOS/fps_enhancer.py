@@ -1202,8 +1202,22 @@ def reassemble_video(
     pbar.close()
 
     if process.returncode != 0 and enc["codec"] not in ("libx264", "libx265"):
-        status(f"{_('Hardware encoder')} {enc['codec']} {_('failed, falling back to libx264.')}", "WARN")
-        enc = ENCODER_PRESETS["libx264"]
+        available = _detect_available_encoders()
+        fallback_name = None
+        for name in ("libx264", "libx265"):
+            if name in ENCODER_PRESETS and name in available:
+                fallback_name = name
+                break
+        if fallback_name is None:
+            for name in available:
+                if name in ENCODER_PRESETS:
+                    fallback_name = name
+                    break
+        if fallback_name is None:
+            status(_("No usable encoder found."), "ERROR")
+            sys.exit(1)
+        status(f"{_('Hardware encoder')} {enc['codec']} {_('failed, falling back to')} {fallback_name}.", "WARN")
+        enc = ENCODER_PRESETS[fallback_name]
         cmd = [
             str(FFMPEG_BIN), "-y",
             "-framerate", str(target_fps),
@@ -1217,7 +1231,7 @@ def reassemble_video(
         if has_audio:
             cmd += ["-map", "1:a?", "-c:a", "aac", "-b:a", "192k", "-shortest"]
         cmd += [str(output_path)]
-        desc = _("Reassembling (libx264 fallback)")
+        desc = _(f"Reassembling ({fallback_name} fallback)")
         if HAS_TQDM:
             pbar = tqdm(total=result_frames, desc=desc, unit="frame", bar_format="{l_bar}{bar:30}{r_bar}")
         else:

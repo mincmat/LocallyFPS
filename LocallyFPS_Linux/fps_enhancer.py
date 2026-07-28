@@ -1293,8 +1293,19 @@ def reassemble_video(
             cmd += ["-vaapi_device", str(render_nodes[0])]
             cmd += ["-vf", "format=nv12,hwupload"]
         else:
-            status(_("VAAPI device not found. Falling back to libx264."), "WARN")
-            enc = ENCODER_PRESETS["libx264"]
+            status(_("VAAPI device not found."), "WARN")
+            available = _detect_available_encoders()
+            fb = None
+            for n in ("libx264", "libx265"):
+                if n in ENCODER_PRESETS and n in available:
+                    fb = n; break
+            if fb is None:
+                for n in available:
+                    if n in ENCODER_PRESETS:
+                        fb = n; break
+            if fb:
+                status(_(f"Falling back to {fb}."), "WARN")
+                enc = ENCODER_PRESETS[fb]
             ffmpeg_hw = None
     cmd += ["-c:v", enc["codec"]]
     if enc["codec"] in ("libx264", "libx265"):
@@ -1346,8 +1357,22 @@ def reassemble_video(
     used_fallback = False
     if process.returncode != 0 and enc["codec"] != "libx264":
         tail = "".join(stderr_buf)
-        status(f"{_('Hardware encoder')} {enc['codec']} {_('failed, falling back to libx264.')}", "WARN")
-        enc = ENCODER_PRESETS["libx264"]
+        available = _detect_available_encoders()
+        fallback_name = None
+        for name in ("libx264", "libx265"):
+            if name in ENCODER_PRESETS and name in available:
+                fallback_name = name
+                break
+        if fallback_name is None:
+            for name in available:
+                if name in ENCODER_PRESETS:
+                    fallback_name = name
+                    break
+        if fallback_name is None:
+            status(f"{_('No usable encoder found.')}\n{tail[-2000:]}", "ERROR")
+            sys.exit(1)
+        status(f"{_('Hardware encoder')} {enc['codec']} {_('failed, falling back to')} {fallback_name}.", "WARN")
+        enc = ENCODER_PRESETS[fallback_name]
         ffmpeg_hw = None
         cmd = [str(FFMPEG_BIN), "-y", "-threads", "auto",
                "-r", str(target_fps), "-i", str(out_frames_dir / "%08d.png")]
@@ -1361,7 +1386,7 @@ def reassemble_video(
         if has_audio:
             cmd += ["-c:a", "aac", "-b:a", "192k"]
         cmd += ["-t", str(video_duration), str(output_path)]
-        sp = Spinner(_("Encoding video (libx264 fallback)"))
+        sp = Spinner(_(f"Encoding video ({fallback_name} fallback)"))
         cmd_prog = [str(FFMPEG_BIN), "-y", "-progress", "pipe:1"] + cmd[2:]
         process = subprocess.Popen(cmd_prog, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1)
         stderr_buf = []
