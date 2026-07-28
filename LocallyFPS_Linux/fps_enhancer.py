@@ -1293,19 +1293,17 @@ def reassemble_video(
             cmd += ["-vaapi_device", str(render_nodes[0])]
             cmd += ["-vf", "format=nv12,hwupload"]
         else:
-            status(_("VAAPI device not found."), "WARN")
-            available = _detect_available_encoders()
-            fb = None
+            status(_("VAAPI device not found, trying other encoders."), "WARN")
+            candidates = []
+            av = _detect_available_encoders()
             for n in ("libx264", "libx265"):
-                if n in ENCODER_PRESETS and n in available:
-                    fb = n; break
-            if fb is None:
-                for n in available:
-                    if n in ENCODER_PRESETS:
-                        fb = n; break
-            if fb:
-                status(_(f"Falling back to {fb}."), "WARN")
-                enc = ENCODER_PRESETS[fb]
+                if n in ENCODER_PRESETS and n in av:
+                    candidates.append(n)
+            for n in av:
+                if n in ENCODER_PRESETS and n not in candidates:
+                    candidates.append(n)
+            if candidates:
+                enc = ENCODER_PRESETS[candidates[0]]
             ffmpeg_hw = None
     cmd += ["-c:v", enc["codec"]]
     if enc["codec"] in ("libx264", "libx265"):
@@ -1354,70 +1352,69 @@ def reassemble_video(
     process.wait()
     stderr_thread.join(timeout=3)
 
-    used_fallback = False
     if process.returncode != 0 and enc["codec"] != "libx264":
         tail = "".join(stderr_buf)
         available = _detect_available_encoders()
-        fallback_name = None
-        for name in ("libx264", "libx265"):
-            if name in ENCODER_PRESETS and name in available:
-                fallback_name = name
-                break
-        if fallback_name is None:
-            for name in available:
-                if name in ENCODER_PRESETS:
-                    fallback_name = name
-                    break
-        if fallback_name is None:
+        candidates = []
+        for n in ("libx264", "libx265"):
+            if n in ENCODER_PRESETS and n in available:
+                candidates.append(n)
+        for n in available:
+            if n in ENCODER_PRESETS and n not in candidates:
+                candidates.append(n)
+        if not candidates:
             status(f"{_('No usable encoder found.')}\n{tail[-2000:]}", "ERROR")
             sys.exit(1)
-        status(f"{_('Hardware encoder')} {enc['codec']} {_('failed, falling back to')} {fallback_name}.", "WARN")
-        enc = ENCODER_PRESETS[fallback_name]
-        ffmpeg_hw = None
-        cmd = [str(FFMPEG_BIN), "-y", "-threads", "auto",
-               "-r", str(target_fps), "-i", str(out_frames_dir / "%08d.png")]
-        if has_audio:
-            cmd += ["-i", str(original_video)]
-        cmd += ["-map", "0:v:0"]
-        if has_audio:
-            cmd += ["-map", "1:a:0"]
-        cmd += ["-c:v", enc["codec"], "-crf", str(crf), "-preset", preset,
-                "-pix_fmt", enc["pix_fmt"]]
-        if has_audio:
-            cmd += ["-c:a", "aac", "-b:a", "192k"]
-        cmd += ["-t", str(video_duration), str(output_path)]
-        sp = Spinner(_(f"Encoding video ({fallback_name} fallback)"))
-        cmd_prog = [str(FFMPEG_BIN), "-y", "-progress", "pipe:1"] + cmd[2:]
-        process = subprocess.Popen(cmd_prog, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1)
-        stderr_buf = []
-        stderr_lock = threading.Lock()
-        def _read_stderr2():
-            while True:
-                chunk = process.stderr.read(65536)
-                if not chunk:
-                    break
-                with stderr_lock:
-                    stderr_buf.append(chunk)
-                    while len(stderr_buf) > 20:
-                        stderr_buf.pop(0)
-        stderr_thread = threading.Thread(target=_read_stderr2, daemon=True)
-        stderr_thread.start()
-        for line in process.stdout:
-            m = time_re.search(line)
-            if m:
-                h, mi, s = int(m.group(1)), int(m.group(2)), int(m.group(3))
-                frac = m.group(4).ljust(6, "0")[:6]
-                time_elapsed = h * 3600 + mi * 60 + s + int(frac) / 1000000
-                sp.tick()
-                while time.time() - last_update > spinner_timeout:
+
+        for fb_name in candidates:
+            enc = ENCODER_PRESETS[fb_name]
+            ffmpeg_hw = None
+            cmd = [str(FFMPEG_BIN), "-y", "-threads", "auto",
+                   "-r", str(target_fps), "-i", str(out_frames_dir / "%08d.png")]
+            if has_audio:
+                cmd += ["-i", str(original_video)]
+            cmd += ["-map", "0:v:0"]
+            if has_audio:
+                cmd += ["-map", "1:a:0"]
+            cmd += ["-c:v", enc["codec"], "-crf", str(crf), "-preset", preset,
+                    "-pix_fmt", enc["pix_fmt"]]
+            if has_audio:
+                cmd += ["-c:a", "aac", "-b:a", "192k"]
+            cmd += ["-t", str(video_duration), str(output_path)]
+            sp = Spinner(_(f"Trying encoder {fb_name}..."))
+            cmd_prog = [str(FFMPEG_BIN), "-y", "-progress", "pipe:1"] + cmd[2:]
+            process = subprocess.Popen(cmd_prog, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1)
+            stderr_buf = []
+            stderr_lock = threading.Lock()
+            def _read_stderr2():
+                while True:
+                    chunk = process.stderr.read(65536)
+                    if not chunk:
+                        break
+                    with stderr_lock:
+                        stderr_buf.append(chunk)
+                        while len(stderr_buf) > 20:
+                            stderr_buf.pop(0)
+            stderr_thread = threading.Thread(target=_read_stderr2, daemon=True)
+            stderr_thread.start()
+            for line in process.stdout:
+                m = time_re.search(line)
+                if m:
+                    h, mi, s = int(m.group(1)), int(m.group(2)), int(m.group(3))
+                    frac = m.group(4).ljust(6, "0")[:6]
+                    time_elapsed = h * 3600 + mi * 60 + s + int(frac) / 1000000
                     sp.tick()
-                    last_update = time.time()
-        process.wait()
-        stderr_thread.join(timeout=3)
-        used_fallback = True
+                    while time.time() - last_update > spinner_timeout:
+                        sp.tick()
+                        last_update = time.time()
+            process.wait()
+            stderr_thread.join(timeout=3)
+            if process.returncode == 0:
+                break
+            status(_(f"Encoder {fb_name} failed."), "WARN")
+            tail = "".join(stderr_buf)
 
     if process.returncode != 0:
-        tail = "".join(stderr_buf)
         status(f"{_('Error reassembling video:')}\n{tail[-3000:]}", "ERROR")
         sys.exit(1)
 

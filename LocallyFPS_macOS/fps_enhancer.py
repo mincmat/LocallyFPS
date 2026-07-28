@@ -1203,35 +1203,37 @@ def reassemble_video(
 
     if process.returncode != 0 and enc["codec"] not in ("libx264", "libx265"):
         available = _detect_available_encoders()
-        fallback_name = None
-        for name in ("libx264", "libx265"):
-            if name in ENCODER_PRESETS and name in available:
-                fallback_name = name
-                break
-        if fallback_name is None:
-            for name in available:
-                if name in ENCODER_PRESETS:
-                    fallback_name = name
-                    break
-        if fallback_name is None:
+        candidates = []
+        for n in ("libx264", "libx265"):
+            if n in ENCODER_PRESETS and n in available:
+                candidates.append(n)
+        for n in available:
+            if n in ENCODER_PRESETS and n not in candidates:
+                candidates.append(n)
+        if not candidates:
             status(_("No usable encoder found."), "ERROR")
             sys.exit(1)
-        status(f"{_('Hardware encoder')} {enc['codec']} {_('failed, falling back to')} {fallback_name}.", "WARN")
-        enc = ENCODER_PRESETS[fallback_name]
-        cmd = [
-            str(FFMPEG_BIN), "-y",
-            "-framerate", str(target_fps),
-            "-i", f"{out_frames_dir}/%08d.png",
-            "-i", str(original_video),
-            "-c:v", enc["codec"],
-            "-crf", str(crf),
-            "-preset", preset,
-            "-pix_fmt", enc["pix_fmt"],
-        ]
-        if has_audio:
-            cmd += ["-map", "1:a?", "-c:a", "aac", "-b:a", "192k", "-shortest"]
-        cmd += [str(output_path)]
-        desc = _(f"Reassembling ({fallback_name} fallback)")
+
+        for fb_name in candidates:
+            enc = ENCODER_PRESETS[fb_name]
+            cmd = [
+                str(FFMPEG_BIN), "-y",
+                "-framerate", str(target_fps),
+                "-i", f"{out_frames_dir}/%08d.png",
+                "-i", str(original_video),
+                "-c:v", enc["codec"],
+                "-crf", str(crf),
+                "-preset", preset,
+                "-pix_fmt", enc["pix_fmt"],
+            ]
+            if has_audio:
+                cmd += ["-map", "1:a?", "-c:a", "aac", "-b:a", "192k", "-shortest"]
+            cmd += [str(output_path)]
+            desc = _(f"Trying encoder {fb_name}...")
+            if HAS_TQDM:
+                pbar = tqdm(total=result_frames, desc=desc, unit="frame", bar_format="{l_bar}{bar:30}{r_bar}")
+            else:
+                pbar = ProgressBar(total=result_frames, desc=desc, unit="frame", width=35)
         if HAS_TQDM:
             pbar = tqdm(total=result_frames, desc=desc, unit="frame", bar_format="{l_bar}{bar:30}{r_bar}")
         else:
@@ -1245,8 +1247,12 @@ def reassemble_video(
                     pbar.update(current - pbar.n)
                 else:
                     pbar.n = current
-        process.wait()
-        pbar.close()
+            process.wait()
+            pbar.close()
+            if process.returncode == 0:
+                status(_(f"Reassembled with {fb_name}"), "OK")
+                break
+            status(_(f"Encoder {fb_name} failed."), "WARN")
 
     if process.returncode != 0:
         status(_("Reassembly failed. Check the output above."), "ERROR")
