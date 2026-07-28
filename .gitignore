@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+*.pyo
+*.py~
+**/videos/original/
+**/videos/enhanced/
+runtime/
+deps/
+models/
+cache/
+.env
+.DS_Store
+Thumbs.db
