@@ -27,17 +27,21 @@ All processing happens **on your computer**. Nothing is uploaded to the cloud.
 
 ## How to use it
 
-### 1. Place your video
+### 1. Download your version
 
-Put your video file inside the `videos/original/` folder.
+Go to the **Releases** tab and download the zip for your operating system (e.g. `LocallyFPS_Linux.zip`), or clone/download the whole repo and use your OS folder. Each release zip is self-contained — you don't need anything else.
 
-### 2. Run the launcher
+### 2. Place your video
+
+Put your video file inside the `videos/original/` folder (create it if missing).
+
+### 3. Run the launcher
 
 | Your OS | File to run |
 |---|---|
-| Linux | `LocallyFPS_Linux/start.sh` (double-click or run in terminal) |
-| macOS | `LocallyFPS_macOS/start.command` (double-click) |
-| Windows | `LocallyFPS_Windows/start.bat` (double-click) |
+| Linux | `start.sh` (double-click or run in terminal) |
+| macOS | `start.command` (double-click) |
+| Windows | `start.bat` (double-click) |
 
 The first time you run it, it will:
 1. Ask you to pick a language (English or Spanish).
@@ -113,6 +117,30 @@ These are already set to sensible defaults — you can ignore them and it works 
 ```bash
 python3 fps_enhancer.py --input videos/original/myvideo.mp4 --target-fps 60
 ```
+
+---
+
+## For developers
+
+The project uses a shared `core/` module with platform-specific code in `platform/`.
+
+```
+LocallyFPS/
+├── core/                    # Shared logic (config, pipeline, wizard, ...)
+├── platform/                # Per-OS code (GPU detection, encoders, terminal input)
+│   ├── linux/
+│   ├── macos/
+│   └── windows/
+├── LocallyFPS_Linux/        # Thin wrapper + launcher
+├── LocallyFPS_macOS/        # Thin wrapper + launcher
+├── LocallyFPS_Windows/      # Thin wrapper + launcher
+├── tests/                   # Unit tests
+└── build_releases.py        # Builds self-contained per-OS release zips
+```
+
+- **Run the tests**: `python3 -m unittest discover -s tests`
+- **Build release zips**: `python3 build_releases.py` (outputs to `dist/`)
+- Each release zip bundles the wrapper, `core/`, `platform/`, languages and launcher — fully self-contained for its OS.
 
 ---
 
