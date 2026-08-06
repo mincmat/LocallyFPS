@@ -77,10 +77,14 @@ def build_one(os_name: str) -> Path:
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as zf:
         total = 0
 
-        # 1. The wrapper and launcher
+        # 1. The wrapper, updater, and launcher
         wrapper = src / "fps_enhancer.py"
         zf.write(wrapper, f"{top}/fps_enhancer.py")
         total += 1
+        updater = ROOT / "update.py"
+        if updater.exists():
+            zf.write(updater, f"{top}/update.py")
+            total += 1
         launcher = src / info["launcher"]
         if launcher.exists():
             zf.write(launcher, f"{top}/{info['launcher']}")
