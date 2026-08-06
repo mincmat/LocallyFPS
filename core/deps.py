@@ -63,7 +63,6 @@ def ensure_rife(auto_yes=False):
     sys_rife = shutil.which(f"rife-ncnn-vulkan{paths.BIN_EXT}") or shutil.which("rife-ncnn-vulkan")
     if sys_rife:
         paths.RIFE_BIN = Path(sys_rife)
-        paths.RIFE_BIN.chmod(0o755)
         return True
     status(_("rife-ncnn-vulkan not found locally or on system."), "WARN")
     url = RIFE_RELEASE_URLS.get(paths.OS_NAME)
