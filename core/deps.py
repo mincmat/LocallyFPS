@@ -55,14 +55,22 @@ def ensure_ffmpeg(auto_yes=False):
     sys.exit(1)
 
 
+def _maybe_chmod(path):
+    try:
+        path.chmod(0o755)
+    except PermissionError:
+        pass
+
+
 def ensure_rife(auto_yes=False):
     rife_bin = paths.RIFE_BIN
     if rife_bin.is_file():
-        rife_bin.chmod(0o755)
+        _maybe_chmod(rife_bin)
         return True
     sys_rife = shutil.which(f"rife-ncnn-vulkan{paths.BIN_EXT}") or shutil.which("rife-ncnn-vulkan")
     if sys_rife:
         paths.RIFE_BIN = Path(sys_rife)
+        _maybe_chmod(Path(sys_rife))
         return True
     status(_("rife-ncnn-vulkan not found locally or on system."), "WARN")
     url = RIFE_RELEASE_URLS.get(paths.OS_NAME)
@@ -73,14 +81,14 @@ def ensure_rife(auto_yes=False):
             import sys
             sys.exit(1)
         if rife_bin.is_file():
-            rife_bin.chmod(0o755)
+            _maybe_chmod(rife_bin)
             return True
         for f in paths._RIFE_DIR.rglob(f"rife-ncnn-vulkan{paths.BIN_EXT}"):
-            f.chmod(0o755)
+            _maybe_chmod(f)
             shutil.move(str(f), str(rife_bin))
             break
         if rife_bin.is_file():
-            rife_bin.chmod(0o755)
+            _maybe_chmod(rife_bin)
             return True
     status(
         _("rife-ncnn-vulkan must be placed manually in:") + f"\n  {rife_bin}\n"
