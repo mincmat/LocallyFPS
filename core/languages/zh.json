@@ -197,5 +197,21 @@
   "Edit the config file directly:": "直接编辑配置文件:",
   "No videos found in videos/original/": "videos/original/ 中未找到视频",
   "Place your videos in the videos/original/ folder to process them.": "将视频放入 videos/original/ 文件夹以处理。",
-  "Videos in videos/original/:": "videos/original/ 中的视频:"
+  "Videos in videos/original/:": "videos/original/ 中的视频:",
+  "Check for updates": "检查更新",
+  "You are running the latest version.": "你已是最新版本。",
+  "Press Enter to continue...": "按 Enter 继续...",
+  "Version": "版本",
+  "is available!": "已发布！",
+  "Current version:": "当前版本：",
+  "This will download the latest version and migrate your videos.": "将下载最新版本并迁移你的视频。",
+  "Download and install the update?": "下载并安装更新？",
+  "Downloading update...": "正在下载更新...",
+  "Download complete": "下载完成",
+  "Download failed": "下载失败",
+  "Installing update...": "正在安装更新...",
+  "Installation complete": "安装完成",
+  "Installation failed": "安装失败",
+  "Update ready!": "更新已就绪！",
+  "Applying update and restarting...": "正在应用更新并重启..."
 }

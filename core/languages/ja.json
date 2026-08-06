@@ -186,5 +186,21 @@
   "but Vulkan does not see it.": "しかしVulkanが認識していません。",
   "AMD GPU detected": "AMD GPU検出",
   "Intel GPU detected": "Intel GPU検出",
-  "without active Vulkan driver.": "Vulkanドライバーが無効です。"
+  "without active Vulkan driver.": "Vulkanドライバーが無効です。",
+  "Check for updates": "更新を確認",
+  "You are running the latest version.": "最新バージョンです。",
+  "Press Enter to continue...": "Enterで続行...",
+  "Version": "バージョン",
+  "is available!": "が利用可能です！",
+  "Current version:": "現在のバージョン:",
+  "This will download the latest version and migrate your videos.": "最新バージョンをダウンロードし、動画を移行します。",
+  "Download and install the update?": "更新をダウンロードしてインストールしますか？",
+  "Downloading update...": "更新をダウンロード中...",
+  "Download complete": "ダウンロード完了",
+  "Download failed": "ダウンロード失敗",
+  "Installing update...": "更新をインストール中...",
+  "Installation complete": "インストール完了",
+  "Installation failed": "インストール失敗",
+  "Update ready!": "更新の準備完了！",
+  "Applying update and restarting...": "更新を適用して再起動中..."
 }

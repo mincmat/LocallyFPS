@@ -227,5 +227,21 @@
   "Edit the config file directly:": "Editá el archivo de configuración directamente:",
   "No videos found in videos/original/": "No se encontraron videos en videos/original/",
   "Place your videos in the videos/original/ folder to process them.": "Coloca tus videos en la carpeta videos/original/ para procesarlos.",
-  "Videos in videos/original/:": "Videos en videos/original/:"
+  "Videos in videos/original/:": "Videos en videos/original/:",
+  "Check for updates": "Buscar actualizaciones",
+  "You are running the latest version.": "Ya tienes la última versión.",
+  "Press Enter to continue...": "Presiona Enter para continuar...",
+  "Version": "Versión",
+  "is available!": "está disponible!",
+  "Current version:": "Versión actual:",
+  "This will download the latest version and migrate your videos.": "Esto descargará la última versión y migrará tus videos.",
+  "Download and install the update?": "¿Descargar e instalar la actualización?",
+  "Downloading update...": "Descargando actualización...",
+  "Download complete": "Descarga completa",
+  "Download failed": "Descarga fallida",
+  "Installing update...": "Instalando actualización...",
+  "Installation complete": "Instalación completa",
+  "Installation failed": "Instalación fallida",
+  "Update ready!": "¡Actualización lista!",
+  "Applying update and restarting...": "Aplicando actualización y reiniciando..."
 }

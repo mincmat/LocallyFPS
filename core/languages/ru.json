@@ -197,5 +197,21 @@
   "Edit the config file directly:": "Редактируйте конфиг напрямую:",
   "No videos found in videos/original/": "Видео не найдены в videos/original/",
   "Place your videos in the videos/original/ folder to process them.": "Поместите видео в папку videos/original/.",
-  "Videos in videos/original/:": "Видео в videos/original/:"
+  "Videos in videos/original/:": "Видео в videos/original/:",
+  "Check for updates": "Проверить обновления",
+  "You are running the latest version.": "У вас последняя версия.",
+  "Press Enter to continue...": "Нажмите Enter, чтобы продолжить...",
+  "Version": "Версия",
+  "is available!": "доступна!",
+  "Current version:": "Текущая версия:",
+  "This will download the latest version and migrate your videos.": "Будет загружена последняя версия и перенесены ваши видео.",
+  "Download and install the update?": "Загрузить и установить обновление?",
+  "Downloading update...": "Загрузка обновления...",
+  "Download complete": "Загрузка завершена",
+  "Download failed": "Ошибка загрузки",
+  "Installing update...": "Установка обновления...",
+  "Installation complete": "Установка завершена",
+  "Installation failed": "Ошибка установки",
+  "Update ready!": "Обновление готово!",
+  "Applying update and restarting...": "Применение обновления и перезапуск..."
 }

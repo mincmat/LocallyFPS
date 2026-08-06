@@ -272,6 +272,7 @@ def interactive_wizard():
         menu_items = [
             _("Enhance video"),
             _("Settings"),
+            _("Check for updates"),
             _("Exit"),
         ]
         term_w, term_h = shutil.get_terminal_size().columns, shutil.get_terminal_size().lines
@@ -302,6 +303,10 @@ def interactive_wizard():
             pass
         elif i == 1:
             _run_settings()
+            continue
+        elif i == 2:
+            from .updater import run_updater
+            run_updater()
             continue
         else:
             sys.exit(0)

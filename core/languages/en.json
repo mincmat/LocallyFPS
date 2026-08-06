@@ -197,5 +197,21 @@
   "Edit the config file directly:": "Edit the config file directly:",
   "No videos found in videos/original/": "No videos found in videos/original/",
   "Place your videos in the videos/original/ folder to process them.": "Place your videos in the videos/original/ folder to process them.",
-  "Videos in videos/original/:": "Videos in videos/original/:"
+  "Videos in videos/original/:": "Videos in videos/original/:",
+  "Check for updates": "Check for updates",
+  "You are running the latest version.": "You are running the latest version.",
+  "Press Enter to continue...": "Press Enter to continue...",
+  "Version": "Version",
+  "is available!": "is available!",
+  "Current version:": "Current version:",
+  "This will download the latest version and migrate your videos.": "This will download the latest version and migrate your videos.",
+  "Download and install the update?": "Download and install the update?",
+  "Downloading update...": "Downloading update...",
+  "Download complete": "Download complete",
+  "Download failed": "Download failed",
+  "Installing update...": "Installing update...",
+  "Installation complete": "Installation complete",
+  "Installation failed": "Installation failed",
+  "Update ready!": "Update ready!",
+  "Applying update and restarting...": "Applying update and restarting..."
 }

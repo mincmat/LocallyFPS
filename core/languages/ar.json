@@ -197,5 +197,21 @@
   "Edit the config file directly:": "Edit the config file directly:",
   "No videos found in videos/original/": "لا توجد فيديوهات في videos/original/",
   "Place your videos in the videos/original/ folder to process them.": "Place your videos in the videos/original/ folder to process them.",
-  "Videos in videos/original/:": "الفيديوهات في videos/original/:"
+  "Videos in videos/original/:": "الفيديوهات في videos/original/:",
+  "Check for updates": "البحث عن تحديثات",
+  "You are running the latest version.": "أنت تستخدم أحدث إصدار.",
+  "Press Enter to continue...": "اضغط Enter للمتابعة...",
+  "Version": "الإصدار",
+  "is available!": "متاح!",
+  "Current version:": "الإصدار الحالي:",
+  "This will download the latest version and migrate your videos.": "سيتم تنزيل أحدث إصدار ونقل مقاطع الفيديو الخاصة بك.",
+  "Download and install the update?": "تنزيل وتثبيت التحديث؟",
+  "Downloading update...": "جاري تنزيل التحديث...",
+  "Download complete": "اكتمل التنزيل",
+  "Download failed": "فشل التنزيل",
+  "Installing update...": "جاري تثبيت التحديث...",
+  "Installation complete": "اكتمل التثبيت",
+  "Installation failed": "فشل التثبيت",
+  "Update ready!": "التحديث جاهز!",
+  "Applying update and restarting...": "جاري تطبيق التحديث وإعادة التشغيل..."
 }

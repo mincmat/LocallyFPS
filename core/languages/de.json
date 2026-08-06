@@ -197,5 +197,21 @@
   "Edit the config file directly:": "Konfiguration direkt bearbeiten:",
   "No videos found in videos/original/": "Keine Videos in videos/original/",
   "Place your videos in the videos/original/ folder to process them.": "Videos in videos/original/ ablegen.",
-  "Videos in videos/original/:": "Videos in videos/original/:"
+  "Videos in videos/original/:": "Videos in videos/original/:",
+  "Check for updates": "Nach Updates suchen",
+  "You are running the latest version.": "Sie verwenden die neueste Version.",
+  "Press Enter to continue...": "Drücken Sie Enter zum Fortfahren...",
+  "Version": "Version",
+  "is available!": "ist verfügbar!",
+  "Current version:": "Aktuelle Version:",
+  "This will download the latest version and migrate your videos.": "Dies lädt die neueste Version herunter und migriert Ihre Videos.",
+  "Download and install the update?": "Update herunterladen und installieren?",
+  "Downloading update...": "Update wird heruntergeladen...",
+  "Download complete": "Download abgeschlossen",
+  "Download failed": "Download fehlgeschlagen",
+  "Installing update...": "Update wird installiert...",
+  "Installation complete": "Installation abgeschlossen",
+  "Installation failed": "Installation fehlgeschlagen",
+  "Update ready!": "Update bereit!",
+  "Applying update and restarting...": "Update wird angewendet und neu gestartet..."
 }

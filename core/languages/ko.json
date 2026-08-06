@@ -197,5 +197,21 @@
   "Edit the config file directly:": "설정 파일 직접 편집:",
   "No videos found in videos/original/": "videos/original/에 비디오 없음",
   "Place your videos in the videos/original/ folder to process them.": "비디오를 videos/original/ 폴더에 넣으세요.",
-  "Videos in videos/original/:": "videos/original/의 비디오:"
+  "Videos in videos/original/:": "videos/original/의 비디오:",
+  "Check for updates": "업데이트 확인",
+  "You are running the latest version.": "최신 버전을 사용 중입니다.",
+  "Press Enter to continue...": "Enter를 눌러 계속...",
+  "Version": "버전",
+  "is available!": "사용 가능!",
+  "Current version:": "현재 버전:",
+  "This will download the latest version and migrate your videos.": "최신 버전을 다운로드하고 동영상을 이전합니다.",
+  "Download and install the update?": "업데이트를 다운로드하고 설치할까요?",
+  "Downloading update...": "업데이트 다운로드 중...",
+  "Download complete": "다운로드 완료",
+  "Download failed": "다운로드 실패",
+  "Installing update...": "업데이트 설치 중...",
+  "Installation complete": "설치 완료",
+  "Installation failed": "설치 실패",
+  "Update ready!": "업데이트 준비 완료!",
+  "Applying update and restarting...": "업데이트 적용 및 재시작 중..."
 }

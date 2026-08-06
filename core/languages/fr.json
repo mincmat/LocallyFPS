@@ -186,5 +186,21 @@
   "but Vulkan does not see it.": "mais Vulkan ne le voit pas.",
   "AMD GPU detected": "GPU AMD détecté",
   "Intel GPU detected": "GPU Intel détecté",
-  "without active Vulkan driver.": "sans pilote Vulkan actif."
+  "without active Vulkan driver.": "sans pilote Vulkan actif.",
+  "Check for updates": "Rechercher des mises à jour",
+  "You are running the latest version.": "Vous utilisez la dernière version.",
+  "Press Enter to continue...": "Appuyez sur Entrée pour continuer...",
+  "Version": "Version",
+  "is available!": "est disponible !",
+  "Current version:": "Version actuelle :",
+  "This will download the latest version and migrate your videos.": "Cela téléchargera la dernière version et migrera vos vidéos.",
+  "Download and install the update?": "Télécharger et installer la mise à jour ?",
+  "Downloading update...": "Téléchargement de la mise à jour...",
+  "Download complete": "Téléchargement terminé",
+  "Download failed": "Échec du téléchargement",
+  "Installing update...": "Installation de la mise à jour...",
+  "Installation complete": "Installation terminée",
+  "Installation failed": "Échec de l'installation",
+  "Update ready!": "Mise à jour prête !",
+  "Applying update and restarting...": "Application de la mise à jour et redémarrage..."
 }
