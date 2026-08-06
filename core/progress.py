@@ -1,3 +1,5 @@
+import re
+import shutil
 import sys
 import time
 
@@ -79,6 +81,74 @@ class DownloadProgress:
             self.pbar.close()
 
 
+class PipelineBar:
+    """Single centered progress bar with box-drawing borders."""
+
+    def __init__(self, width=20, box_width=50, header=None, enabled=None):
+        self.width = width
+        self._box_w = box_width
+        self._inner = box_width - 2
+        self._enabled = enabled if enabled is not None else sys.stdout.isatty()
+        self._last = -1
+        if not self._enabled:
+            return
+        term = shutil.get_terminal_size()
+        self._term_w = term.columns
+        self._box_pad = " " * max(0, (self._term_w - self._box_w) // 2)
+        header_lines = header or []
+        h_total = len(header_lines) + (1 if header_lines else 0)
+        rows = max(1, (term.lines - (h_total + 4)) // 2 - 1)
+        sys.stdout.write("\033[2J\033[H\033[3J")
+        sys.stdout.write("\n" * rows)
+        if header_lines:
+            for line in header_lines:
+                clean = re.sub(r'\033\[[0-9;]*m', '', line)
+                pad = max(0, (self._term_w - len(clean)) // 2)
+                sys.stdout.write(" " * pad + line + "\n")
+            sys.stdout.write("\n" * 5)
+        self._top_line = "┌" + "─" * self._inner + "┐"
+        self._bot_line = "└" + "─" * self._inner + "┘"
+        mid = "│" + " " * self._inner + "│"
+        sys.stdout.write(f"{self._box_pad}{self._top_line}\n")
+        sys.stdout.write(f"{self._box_pad}{mid}\n")
+        sys.stdout.write(f"{self._box_pad}{mid}\n")
+        sys.stdout.write(f"{self._box_pad}{self._bot_line}\n")
+        sys.stdout.flush()
+
+    def update(self, pct, label=None):
+        if not self._enabled:
+            return
+        pct = max(0.0, min(1.0, pct))
+        if abs(pct - self._last) < 0.001:
+            return
+        self._last = pct
+
+        if label:
+            clean = re.sub(r'\033\[[0-9;]*m', '', label)
+            lp = max(0, (self._inner - len(clean)) // 2)
+            label_line = "│" + " " * lp + label + " " * (self._inner - lp - len(clean)) + "│"
+        else:
+            label_line = "│" + " " * self._inner + "│"
+
+        filled = int(self.width * pct)
+        bar = "#" * filled + "-" * (self.width - filled)
+        pct_str = f" {pct * 100:5.1f}%"
+        bl = (self._inner - self.width - 7) // 2
+        tail = self._inner - self.width - 7 - bl
+        bar_line = "│" + " " * bl + bar + pct_str + " " * tail + "│"
+
+        sys.stdout.write(f"\x1b[4A\r{self._box_pad}{self._top_line}\x1b[K\n"
+                         f"{self._box_pad}{label_line}\x1b[K\n"
+                         f"{self._box_pad}{bar_line}\x1b[K\n"
+                         f"{self._box_pad}{self._bot_line}\x1b[K\n")
+        sys.stdout.flush()
+
+    def close(self):
+        if self._enabled:
+            sys.stdout.write("\r\n")
+            sys.stdout.flush()
+
+
 class Spinner:
     _CHARS = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 
@@ -89,15 +159,16 @@ class Spinner:
         self._idx = 0
         self._chars = Spinner._CHARS
         self._start = time.time()
+        self._pad = " " * max(0, (shutil.get_terminal_size().columns - len(msg) - 4) // 2)
         if self._enabled:
-            sys.stdout.write(f"\r{self.msg} ")
+            sys.stdout.write(f"\r{self._pad}{self.msg} ")
             sys.stdout.flush()
 
     def tick(self):
         if not self._enabled or self._done:
             return
         self._idx = (self._idx + 1) % len(self._chars)
-        sys.stdout.write(f"\r{self.msg} {self._chars[self._idx]} ")
+        sys.stdout.write(f"\r{self._pad}{self.msg} {self._chars[self._idx]} ")
         sys.stdout.flush()
 
     def ok(self, msg=None, show_time=True):
@@ -109,7 +180,7 @@ class Spinner:
             final = msg or self.msg
             if show_time:
                 elapsed = time.time() - self._start
-                sys.stdout.write(f"\r{check} {final} {Color.dim(f'({format_duration(elapsed)})')}\n")
+                sys.stdout.write(f"\r{self._pad}{check} {final} {Color.dim(f'({format_duration(elapsed)})')}\n")
             else:
-                sys.stdout.write(f"\r{check} {final}\n")
+                sys.stdout.write(f"\r{self._pad}{check} {final}\n")
             sys.stdout.flush()

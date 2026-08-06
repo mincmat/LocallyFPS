@@ -11,7 +11,7 @@ except ImportError:
 from . import paths
 from .colors import Color
 from .console import status
-from .extract import count_files, _watch_progress_proc
+from .extract import count_files, _watch_progress_cb, _watch_progress_proc
 from .i18n import _
 from .progress import ProgressBar
 
@@ -23,7 +23,7 @@ def _model_supports_custom_frame_count(model):
 def run_interpolation(
     in_frames_dir, out_frames_dir, model, threads,
     source_frame_count, source_fps, target_fps,
-    gpu_id=None, uhd=False, tile_size=0
+    gpu_id=None, uhd=False, tile_size=0, progress_cb=None
 ):
     supports_n = _model_supports_custom_frame_count(model)
     if supports_n:
@@ -55,17 +55,23 @@ def run_interpolation(
         cmd += ["-t", str(tile_size)]
 
     desc = _("Interpolating")
-    if HAS_TQDM:
-        pbar = tqdm(total=target_frame_count, desc=Color.bold(desc), unit="frame", bar_format="{l_bar}{bar:30}{r_bar}")
-    else:
-        pbar = ProgressBar(total=target_frame_count, desc=desc, unit="frame", width=35)
-
     process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
 
     stop_event = threading.Event()
-    watcher = threading.Thread(
-        target=_watch_progress_proc, args=(out_frames_dir, target_frame_count, stop_event, pbar), daemon=True
-    )
+    if progress_cb:
+        watcher = threading.Thread(
+            target=_watch_progress_cb, args=(out_frames_dir, target_frame_count, stop_event, progress_cb), daemon=True
+        )
+    elif HAS_TQDM:
+        pbar = tqdm(total=target_frame_count, desc=Color.bold(desc), unit="frame", bar_format="{l_bar}{bar:30}{r_bar}")
+        watcher = threading.Thread(
+            target=_watch_progress_proc, args=(out_frames_dir, target_frame_count, stop_event, pbar), daemon=True
+        )
+    else:
+        pbar = ProgressBar(total=target_frame_count, desc=desc, unit="frame", width=35)
+        watcher = threading.Thread(
+            target=_watch_progress_proc, args=(out_frames_dir, target_frame_count, stop_event, pbar), daemon=True
+        )
     watcher.start()
 
     output_lines = []
@@ -75,7 +81,8 @@ def run_interpolation(
     process.wait()
     stop_event.set()
     watcher.join()
-    pbar.close()
+    if not progress_cb:
+        pbar.close()
 
     if process.returncode != 0:
         status(_("RIFE completed with error."), "ERROR")
@@ -84,5 +91,6 @@ def run_interpolation(
         sys.exit(1)
 
     result_frames = count_files(out_frames_dir, "*.png")
-    print(f"{Color.ok(_('[✓]'))} {_('Interpolation complete:')} {Color.bold(str(result_frames))} {_('frames generated')}", flush=True)
+    if not progress_cb:
+        print(f"{Color.ok(_('[✓]'))} {_('Interpolation complete:')} {Color.bold(str(result_frames))} {_('frames generated')}", flush=True)
     return actual_output_fps

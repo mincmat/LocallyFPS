@@ -181,9 +181,6 @@ class WindowsPlatform:
             ffmpeg_gpu = {"hwaccel": "d3d11va", "hint": " (AMD)"}
         elif "intel" in name.lower():
             ffmpeg_gpu = {"hwaccel": "qsv", "hint": " (Intel)"}
-        if ffmpeg_gpu["hint"]:
-            prefix = _("Multi-GPU") if multi_gpu else _("RIFE on")
-            status(f"{prefix}: {name}{ffmpeg_gpu['hint']}", "OK")
 
         return {"gpu_id": gpu_id, "gpu_name": name, "threads": threads,
                 "uhd": is_uhd_res, "class": cls, "tile_size": tile_size,
@@ -200,7 +197,7 @@ class WindowsPlatform:
                 print(f"  {i+1}. {opt}")
             while True:
                 try:
-                    resp = input(f"{Color.magenta('▸')} ").strip()
+                    resp = input(f"{Color.magenta('>')} ").strip()
                     if resp:
                         idx = int(resp) - 1
                         if 0 <= idx < n:
@@ -210,9 +207,14 @@ class WindowsPlatform:
                 print(f"{Color.warn(_('Enter a number between 1 and'))} {n}.")
 
         idx = 0
-        sys.stdout.write(f"\r{Color.bold(prompt)}\r\n")
+        max_opt = max(len(opt) for opt in options)
+        max_w = max_opt + 2
+        term_w = shutil.get_terminal_size().columns
+        pad = " " * max(0, (term_w - max_w) // 2)
+        if prompt:
+            sys.stdout.write(f"\r{pad}{Color.bold(prompt)}\r\n")
         for i, opt in enumerate(options):
-            sys.stdout.write(f"\r  {'▸' if i == idx else ' '} {opt}\r\n")
+            sys.stdout.write(pad + " " + (">" if i == idx else " ") + " " + opt + "\r\n")
         sys.stdout.flush()
         while True:
             ch = msvcrt.getch()
@@ -228,8 +230,15 @@ class WindowsPlatform:
                     idx = (idx + 1) % n
                 sys.stdout.write(f"\x1b[{n}A")
                 for i, opt in enumerate(options):
-                    sys.stdout.write(f"\r  {'▸' if i == idx else ' '} {opt}\x1b[K\r\n")
+                    sys.stdout.write("\r" + pad + " " + (">" if i == idx else " ") + " " + opt + "\x1b[K\r\n")
                 sys.stdout.flush()
+            elif ch in (b"b", b"B"):
+                idx = -1
+                sys.stdout.write(f"\x1b[{n}A")
+                for _ in range(n):
+                    sys.stdout.write("\r\x1b[K\n")
+                sys.stdout.flush()
+                break
             elif ch in (b"\r", b"\n"):
                 total = n + 1
                 sys.stdout.write(f"\x1b[{total}A")
@@ -251,8 +260,12 @@ class WindowsPlatform:
             return -1
 
         idx = 0
+        max_opt = max(len(opt) for opt in options)
+        max_w = max_opt + 2
+        term_w = shutil.get_terminal_size().columns
+        pad = " " * max(0, (term_w - max_w) // 2)
         for i, opt in enumerate(options):
-            sys.stdout.write(f"  {'▸' if i == idx else ' '} {opt}\r\n")
+            sys.stdout.write(pad + " " + (">" if i == idx else " ") + " " + opt + "\r\n")
         sys.stdout.flush()
         while True:
             ch = msvcrt.getch()
@@ -268,8 +281,15 @@ class WindowsPlatform:
                     idx = (idx + 1) % n
                 sys.stdout.write(f"\x1b[{n}A")
                 for i, opt in enumerate(options):
-                    sys.stdout.write(f"\r  {'▸' if i == idx else ' '} {opt}\x1b[K\r\n")
+                    sys.stdout.write("\r" + pad + " " + (">" if i == idx else " ") + " " + opt + "\x1b[K\r\n")
                 sys.stdout.flush()
+            elif ch in (b"b", b"B"):
+                idx = -1
+                sys.stdout.write(f"\x1b[{n}A")
+                for _ in range(n):
+                    sys.stdout.write("\r\x1b[K\n")
+                sys.stdout.flush()
+                break
             elif ch in (b"\r", b"\n"):
                 total = n
                 sys.stdout.write(f"\x1b[{total}A")

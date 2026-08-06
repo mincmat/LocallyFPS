@@ -2,7 +2,7 @@ import os
 import sys
 from pathlib import Path
 
-APP_VERSION = "1.2"
+APP_VERSION = "2.0"
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 FFMPEG_BIN = None
@@ -53,9 +53,11 @@ def setup(base_dir):
     _FFMPEG_DIR = BASE_DIR / "deps" / "ffmpeg"
     _RIFE_DIR = BASE_DIR / "deps" / "rife"
     CONFIG_PATH = CONFIG_DIR / "settings.json"
-    LANG_DIR = BASE_DIR.parent / "core" / "languages"
+    LANG_DIR = BASE_DIR / "languages"
     if not LANG_DIR.is_dir():
-        LANG_DIR = BASE_DIR / "languages"
+        LANG_DIR = BASE_DIR.parent / "core" / "languages"
+    if not LANG_DIR.is_dir():
+        LANG_DIR = BASE_DIR / "core" / "languages"
 
 
 REQUIRED_DIRS = []

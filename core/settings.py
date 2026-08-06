@@ -69,7 +69,7 @@ def _run_settings():
             elif sub == 1:
                 print(f"\n{Color.dim(_('CRF'))} (0-51, {_('lower = better quality')}):")
                 try:
-                    v = input(f"{Color.magenta('▸')} ").strip()
+                    v = input(f"{Color.magenta('>')} ").strip()
                     v = int(v)
                     if 0 <= v <= 51:
                         CONFIG["crf"] = v

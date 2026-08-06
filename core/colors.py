@@ -15,8 +15,9 @@ class Color:
         CYAN = "\033[36m"
         MAGENTA = "\033[35m"
         GRAY = "\033[90m"
+        ACCENT = "\033[38;5;214m"
     else:
-        RESET = BOLD = DIM = RED = GREEN = YELLOW = CYAN = MAGENTA = GRAY = ""
+        RESET = BOLD = DIM = RED = GREEN = YELLOW = CYAN = MAGENTA = GRAY = ACCENT = ""
 
     @classmethod
     def info(cls, t):
@@ -49,3 +50,19 @@ class Color:
     @classmethod
     def gray(cls, t):
         return f"{cls.GRAY}{t}{cls.RESET}"
+
+    @classmethod
+    def accent(cls, t):
+        return f"{cls.ACCENT}{t}{cls.RESET}"
+
+    @classmethod
+    def ok_bold(cls, t):
+        if cls._ENABLED:
+            return f"\033[1;32m{t}\033[0m"
+        return t
+
+    @classmethod
+    def accent_bold(cls, t):
+        if cls._ENABLED:
+            return f"\033[1;38;5;214m{t}\033[0m"
+        return t

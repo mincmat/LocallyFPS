@@ -13,3 +13,14 @@ cache/
 Thumbs.db
 dist/
 *.zip
+
+# Distributable OS folders — track wrappers/launchers, ignore generated copies
+LocallyFPS_Linux/core/
+LocallyFPS_Linux/platform/
+LocallyFPS_Linux/languages/
+LocallyFPS_macOS/core/
+LocallyFPS_macOS/platform/
+LocallyFPS_macOS/languages/
+LocallyFPS_Windows/core/
+LocallyFPS_Windows/platform/
+LocallyFPS_Windows/languages/

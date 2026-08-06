@@ -1,4 +1,6 @@
 import argparse
+import atexit
+import shutil
 import sys
 from pathlib import Path
 
@@ -13,7 +15,19 @@ from .pipeline import run_pipeline
 from .probe import probe_video_file, print_video_metadata
 from .progress import Spinner
 from .settings import _run_settings
-from .utils import format_duration, format_fps, human_size
+from .utils import format_fps
+
+if sys.platform.startswith("linux") and sys.stdin.isatty():
+    import termios as _termios
+    _SAVED_TERMIOS = _termios.tcgetattr(sys.stdin.fileno())
+    def _restore_terminal():
+        try:
+            _termios.tcsetattr(sys.stdin.fileno(), _termios.TCSANOW, _SAVED_TERMIOS)
+        except Exception:
+            pass
+    atexit.register(_restore_terminal)
+else:
+    _SAVED_TERMIOS = None
 
 
 def prompt_for_video():
@@ -27,24 +41,41 @@ def prompt_for_video():
     video_files = [f for f in videos_dir.iterdir() if f.is_file()]
     video_files = [f for f in video_files if f.suffix.lower() in ('.mp4', '.mkv', '.avi', '.mov', '.webm', '.flv')]
 
+    term_w = shutil.get_terminal_size().columns
+
     if not video_files:
-        print(f"\n{Color.bold(_('Select video to enhance - (b to go back)'))}")
-        print(f"{Color.warn(_('No videos found in videos/original/'))}")
-        print(f"{Color.dim(_('Place your videos in the videos/original/ folder to process them.'))}")
-        print()
+        sys.stdout.write("\033[2J\033[H\033[3J")
+        _write_version_corner()
+        header = _("SELECT A VIDEO")
+        hp = max(0, (term_w - len(header)) // 2)
+        msg1 = _("No videos found in videos/original/")
+        msg2 = _("Place your videos in the videos/original/ folder to process them.")
+        sys.stdout.write("\n\n\n")
+        sys.stdout.write(" " * hp + Color.accent_bold(header) + "\n\n")
+        sys.stdout.write(" " * max(0, (term_w - len(msg1)) // 2) + Color.warn(msg1) + "\n")
+        sys.stdout.write(" " * max(0, (term_w - len(msg2)) // 2) + Color.dim(msg2) + "\n")
+        sys.stdout.write("\n")
+        sys.stdout.flush()
         try:
-            raw = input(f"{Color.magenta('▸')} ").strip()
+            raw = input(" " * max(0, (term_w - 3) // 2) + "b " + Color.dim(_("(Back)")) + " ").strip()
         except (EOFError, KeyboardInterrupt):
-            print()
-            return None
-        if raw.lower() in ("b", "back", "←"):
             return None
         return None
 
     video_names = [f.name for f in video_files]
 
-    print(f"\n{Color.bold(_('Select video to enhance - (b to go back)'))}")
-    print(f"{Color.dim(_('Videos in videos/original/:'))}")
+    sys.stdout.write("\033[2J\033[H\033[3J")
+    _write_version_corner()
+    header = _("SELECT A VIDEO")
+    hp = max(0, (term_w - len(header)) // 2)
+    sub = _("videos/original/")
+    sp = max(0, (term_w - len(sub)) // 2)
+    sys.stdout.write("\n\n")
+    sys.stdout.write(" " * hp + Color.accent_bold(header) + "\n")
+    sys.stdout.write(" " * sp + Color.dim(sub) + "\n\n")
+    hint = _("Up/Down to navigate, Enter to select, B to go back")
+    sys.stdout.write(" " * max(0, (term_w - len(hint)) // 2) + Color.dim(hint) + "\n\n\n")
+    sys.stdout.flush()
 
     if sys.stdin.isatty():
         i = plat.interactive_select_video(video_names)
@@ -55,11 +86,11 @@ def prompt_for_video():
         for i, name in enumerate(video_names, 1):
             print(f"  {i}. {name}")
         try:
-            raw = input(f"{Color.magenta('▸')} ").strip()
+            raw = input(f"{Color.magenta('>')} ").strip()
         except (EOFError, KeyboardInterrupt):
             print()
             return None
-        if raw.lower() in ("b", "back", "←"):
+        if raw.lower() in ("b", "back"):
             return None
         try:
             i = int(raw) - 1
@@ -71,60 +102,168 @@ def prompt_for_video():
             print(f"{Color.warn(_('Enter a valid number.'))}")
             return None
 
-    sp = Spinner(_("Verifying video file..."))
+    sp = Spinner(_("Probing video..."))
     info = probe_video_file(selected_video)
     if info is None:
         sp.ok(f"{Color.warn(_('Not a processable video file.'))}")
         return None
-    sp.ok(f"{Color.info(_('Video'))}: {Color.bold(selected_video.name)}, {_('FPS')}: {format_fps(info['fps'])}, {_('Resolution')}: {info['width']}x{info['height']}, {_('Duration')}: {format_duration(info['duration'])}, {_('Size')}: {human_size(info['size_bytes'])}")
 
     info['path'] = selected_video
     return info
 
 
-def prompt_for_fps(source_fps):
-    print(f"\n{Color.bold(_('Target FPS'))}")
+def _validate_fps(raw, source_fps):
+    raw = raw.strip().replace(",", ".")
+    try:
+        fps = float(raw)
+    except ValueError:
+        print(f"{Color.warn(_('Enter a valid number.'))}")
+        return None
+    if fps <= 0:
+        print(f"{Color.warn(_('FPS must be greater than 0.'))}")
+        return None
+    if fps > 240:
+        if not ask_yes_no(f"{fps} {_('is very high. Are you sure?')}", default=False):
+            return None
+    if fps <= source_fps:
+        if not ask_yes_no(
+            f"{fps} {_('is not higher than the current framerate (')}{format_fps(source_fps)}). {_('Continue anyway?')}",
+            default=False,
+        ):
+            return None
+    return fps
+
+
+def _prompt_fps_raw(source_fps):
+    import termios
+    import tty
+
+    fd = sys.stdin.fileno()
+    old = termios.tcgetattr(fd)
+    try:
+        tty.setraw(fd)
+        term_w = shutil.get_terminal_size().columns
+        prompt_pad = " " * max(0, (term_w - 2) // 2)
+        while True:
+            buf = ""
+            sys.stdout.write(prompt_pad + f"{Color.magenta('>')} ")
+            sys.stdout.flush()
+            while True:
+                ch = sys.stdin.read(1)
+                if ch == "\x03":
+                    sys.stdout.write("\r\x1b[K\r\n")
+                    sys.stdout.flush()
+                    return None
+                if ch in ("b", "B"):
+                    sys.stdout.write("\r\x1b[K\r\n")
+                    sys.stdout.flush()
+                    return None
+                if ch in ("\r", "\n"):
+                    break
+                if ch in ("\x7f", "\x08"):
+                    if buf:
+                        buf = buf[:-1]
+                        sys.stdout.write("\b \b")
+                        sys.stdout.flush()
+                    continue
+                if ch.isdigit() or ch in (".", ","):
+                    buf += ch
+                    sys.stdout.write(ch)
+                    sys.stdout.flush()
+            sys.stdout.write("\r\n")
+            sys.stdout.flush()
+            termios.tcsetattr(fd, termios.TCSANOW, old)
+            fps = _validate_fps(buf, source_fps)
+            if fps is not None:
+                return fps
+            tty.setraw(fd)
+            import termios as _t
+            _t.tcflush(fd, _t.TCIFLUSH)
+    except KeyboardInterrupt:
+        sys.stdout.write("\r\n")
+        sys.stdout.flush()
+        return None
+    finally:
+        termios.tcsetattr(fd, termios.TCSANOW, old)
+
+
+def prompt_for_fps(source_fps, video_name=None):
+    term_w = shutil.get_terminal_size().columns
+    sys.stdout.write("\033[2J\033[H\033[3J")
+    _write_version_corner()
+    header = _("TARGET FPS")
+    hp = max(0, (term_w - len(header)) // 2)
+    cur_fps = f"{_('Current')}: {format_fps(source_fps)}"
+    cp = max(0, (term_w - len(cur_fps)) // 2)
+
+    sys.stdout.write("\n\n\n")
+    if video_name:
+        np = max(0, (term_w - len(video_name)) // 2)
+        sys.stdout.write(" " * np + Color.bold(video_name) + "\n\n")
+    sys.stdout.write(" " * hp + Color.accent_bold(header) + "\n")
+    sys.stdout.write(" " * cp + Color.dim(cur_fps) + "\n")
+    sys.stdout.write("\n")
+    sys.stdout.flush()
+
+    if sys.platform.startswith("linux") and sys.stdin.isatty():
+        return _prompt_fps_raw(source_fps)
+
     while True:
         try:
-            raw = input(f"{Color.magenta('▸')} ").strip().replace(",", ".")
+            prompt_text = f"{Color.magenta('>')} "
+            raw = input(prompt_text).strip().replace(",", ".")
         except (EOFError, KeyboardInterrupt):
             print()
             return None
-        if raw.lower() in ("b", "back", "←"):
-            return None
-        try:
-            fps = float(raw)
-        except ValueError:
-            print(f"{Color.warn(_('Enter a valid number.'))}")
-            continue
-        if fps <= 0:
-            print(f"{Color.warn(_('FPS must be greater than 0.'))}")
-            continue
-        if fps > 240:
-            if not ask_yes_no(f"{fps} {_('is very high. Are you sure?')}", default=False):
-                continue
-        if fps <= source_fps:
-            if not ask_yes_no(
-                f"{fps} {_('is not higher than the current framerate (')}{format_fps(source_fps)}). {_('Continue anyway?')}",
-                default=False,
-            ):
-                continue
-        return fps
+        fps = _validate_fps(raw, source_fps)
+        if fps is not None:
+            return fps
 
 
 def prompt_for_output(input_path, target_fps):
     return resolve_output_path("", input_path, target_fps)
 
 
+_RAINBOW = [196, 202, 208, 214, 220, 226, 154, 118, 82, 46, 47, 48, 49, 50, 51, 45, 39, 33, 27, 57, 93, 129, 165, 201]
+
+
+def _gradient_line(line):
+    total = max(1, sum(2 if ch == '█' else 1 for ch in line) - 1)
+    col = 0
+    out = []
+    for ch in line:
+        frac = col / total
+        idx = _RAINBOW[min(int(frac * (len(_RAINBOW) - 1)), len(_RAINBOW) - 1)]
+        out.append(f"\033[38;5;{idx}m{ch}\033[0m")
+        col += 2 if ch == '█' else 1
+    return "".join(out)
+
+
+LOGO_LINES = [
+    "██╗      ██████╗  ██████╗ █████╗ ██╗     ██╗  ██╗   ██╗███████╗██████╗ ███████╗",
+    "██║     ██╔═══██╗██╔════╝██╔══██╗██║     ██║  ╚██╗ ██╔╝██╔════╝██╔══██╗██╔════╝",
+    "██║     ██║   ██║██║     ███████║██║     ██║   ╚████╔╝ █████╗  ██████╔╝███████╗",
+    "██║     ██║   ██║██║     ██╔══██║██║     ██║    ╚██╔╝  ██╔══╝  ██╔═══╝ ╚════██║",
+    "███████╗╚██████╔╝╚██████╗██║  ██║███████╗███████╗██║   ██║     ██║     ███████║",
+    "╚══════╝ ╚═════╝  ╚═════╝╚═╝  ╚═╝╚══════╝╚══════╝╚═╝   ╚═╝     ╚═╝     ╚══════╝",
+]
+
+
+def _write_version_corner():
+    term_h = shutil.get_terminal_size().lines
+    sys.stdout.write("\x1b[s")
+    sys.stdout.write(f"\x1b[{term_h};1H")
+    sys.stdout.write(Color.dim("v" + paths.APP_VERSION))
+    sys.stdout.write("\x1b[u")
+    sys.stdout.flush()
+
+
 def interactive_wizard():
     from .deps import ensure_ffmpeg, ensure_rife
     from .models import ensure_default_model
-    print(f"\n{Color.bold(_('=== LocallyFPS'))} - v{paths.APP_VERSION} ===\n")
-    sp = Spinner(_("Checking system dependencies..."))
     ensure_ffmpeg()
     ensure_rife()
     ensure_default_model()
-    sp.ok(_("All dependencies ready"))
 
     from platform import get_platform
     plat = get_platform()
@@ -135,6 +274,29 @@ def interactive_wizard():
             _("Settings"),
             _("Exit"),
         ]
+        term_w, term_h = shutil.get_terminal_size().columns, shutil.get_terminal_size().lines
+
+        sys.stdout.write("\033[2J\033[3J")
+        sys.stdout.write("\033[H")
+        _write_version_corner()
+
+        logo_vis_w = max(len(line) + line.count('█') for line in LOGO_LINES)
+        has_logo = term_w >= logo_vis_w + 4
+        header_lines = (len(LOGO_LINES) + 1) if has_logo else 2
+        vpad = max(0, (term_h - header_lines - len(menu_items)) // 2 - 5)
+        sys.stdout.write("\n" * vpad)
+
+        if has_logo:
+            logo_raw_w = max(len(line) for line in LOGO_LINES)
+            logo_pad = max(0, (term_w - logo_raw_w) // 2)
+            for line in LOGO_LINES:
+                sys.stdout.write(" " * logo_pad + _gradient_line(line) + "\n")
+        else:
+            title = f"=== LocallyFPS ==="
+            sys.stdout.write(" " * max(0, (term_w - len(title)) // 2) + Color.accent_bold(title) + "\n")
+        sys.stdout.write("\n\n\n\n")
+        sys.stdout.flush()
+
         i = plat.interactive_select("", menu_items)
         if i == 0:
             pass
@@ -148,14 +310,14 @@ def interactive_wizard():
         if info is None:
             continue
         gpu_settings = choose_gpu_settings(info["width"], info["height"])
-        target_fps = prompt_for_fps(info["fps"])
+        target_fps = prompt_for_fps(info["fps"], info["path"].name)
         if target_fps is None:
             continue
         output_path = prompt_for_output(info["path"], target_fps)
         if output_path is None:
             continue
 
-        run_pipeline(info, target_fps, output_path, gpu_settings)
+        run_pipeline(info, target_fps, output_path, gpu_settings, interactive=True)
         print()
 
 

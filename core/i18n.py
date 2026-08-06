@@ -5,7 +5,9 @@ from .config import CONFIG
 TRANSLATIONS = {}
 
 LANGUAGE_NAMES = {
-    "en": "English", "es": "Español",
+    "en": "English", "es": "Español", "de": "Deutsch",
+    "ru": "Русский", "ar": "العربية", "zh": "中文", "ko": "한국어",
+    "fr": "Français", "pt": "Português", "ja": "日本語",
 }
 LANG_CODES = list(LANGUAGE_NAMES.keys())
 

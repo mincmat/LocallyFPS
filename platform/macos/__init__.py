@@ -163,7 +163,7 @@ class MacOSPlatform:
                 print(f"  {i+1}. {opt}")
             while True:
                 try:
-                    resp = input(f"{Color.magenta('▸')} ").strip()
+                    resp = input(f"{Color.magenta('>')} ").strip()
                     if resp:
                         idx = int(resp) - 1
                         if 0 <= idx < n:
@@ -175,11 +175,16 @@ class MacOSPlatform:
         fd = sys.stdin.fileno()
         old = termios.tcgetattr(fd)
         idx = 0
+        max_opt = max(len(opt) for opt in options)
+        max_w = max_opt + 2
+        term_w = shutil.get_terminal_size().columns
+        pad = " " * max(0, (term_w - max_w) // 2)
         try:
             tty.setraw(fd)
-            sys.stdout.write(f"\r{Color.bold(prompt)}\r\n")
+            if prompt:
+                sys.stdout.write("\r" + " " * max(0, (term_w - len(prompt)) // 2) + Color.bold(prompt) + "\r\n")
             for i, opt in enumerate(options):
-                sys.stdout.write(f"\r  {'▸' if i == idx else ' '} {opt}\r\n")
+                sys.stdout.write(pad + " " + (">" if i == idx else " ") + " " + opt + "\r\n")
             sys.stdout.flush()
             while True:
                 ch = sys.stdin.read(1)
@@ -196,8 +201,15 @@ class MacOSPlatform:
                         idx = (idx + 1) % n
                     sys.stdout.write(f"\x1b[{n}A")
                     for i, opt in enumerate(options):
-                        sys.stdout.write(f"\r  {'▸' if i == idx else ' '} {opt}\x1b[K\r\n")
+                        sys.stdout.write("\r" + pad + " " + (">" if i == idx else " ") + " " + opt + "\x1b[K\r\n")
                     sys.stdout.flush()
+                elif ch in ("b", "B"):
+                    idx = -1
+                    sys.stdout.write(f"\x1b[{n}A")
+                    for _ in range(n):
+                        sys.stdout.write("\r\x1b[K\n")
+                    sys.stdout.flush()
+                    break
                 elif ch == "\r":
                     total = n + 1
                     sys.stdout.write(f"\x1b[{total}A")
@@ -219,10 +231,14 @@ class MacOSPlatform:
         fd = sys.stdin.fileno()
         old = termios.tcgetattr(fd)
         idx = 0
+        max_opt = max(len(opt) for opt in options)
+        max_w = max_opt + 2
+        term_w = shutil.get_terminal_size().columns
+        pad = " " * max(0, (term_w - max_w) // 2)
         try:
             tty.setraw(fd)
             for i, opt in enumerate(options):
-                sys.stdout.write(f"  {'▸' if i == idx else ' '} {opt}\r\n")
+                sys.stdout.write(pad + " " + (">" if i == idx else " ") + " " + opt + "\r\n")
             sys.stdout.flush()
             while True:
                 ch = sys.stdin.read(1)
@@ -239,8 +255,15 @@ class MacOSPlatform:
                         idx = (idx + 1) % n
                     sys.stdout.write(f"\x1b[{n}A")
                     for i, opt in enumerate(options):
-                        sys.stdout.write(f"\r  {'▸' if i == idx else ' '} {opt}\x1b[K\r\n")
+                        sys.stdout.write("\r" + pad + " " + (">" if i == idx else " ") + " " + opt + "\x1b[K\r\n")
                     sys.stdout.flush()
+                elif ch in ("b", "B"):
+                    idx = -1
+                    sys.stdout.write(f"\x1b[{n}A")
+                    for _ in range(n):
+                        sys.stdout.write("\r\x1b[K\n")
+                    sys.stdout.flush()
+                    break
                 elif ch == "\r":
                     total = n
                     sys.stdout.write(f"\x1b[{total}A")
