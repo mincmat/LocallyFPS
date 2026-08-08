@@ -1,22 +1,22 @@
 # LocallyFPS
 
-Aumentá el FPS de tus videos con IA, todo en tu PC. Sin subir nada a la nube.
+Upscale your video FPS with AI, right on your machine. No cloud uploads.
 
-Usa el modelo RIFE para interpolar frames y ffmpeg para el encoding. Soporta Linux, Windows y macOS.
+Uses RIFE for frame interpolation and ffmpeg for encoding. Supports Linux, Windows, and macOS.
 
-## Qué hace
+## What it does
 
-- Extrae los frames del video con ffmpeg
-- RIFE genera frames intermedios con IA (ej: de 24 a 60 fps)
-- ffmpeg reensambla todo con audio
+- Extracts frames from your video with ffmpeg
+- RIFE generates intermediate frames with AI (e.g., 24fps to 60fps)
+- ffmpeg reassembles everything with audio
 
-## Requisitos
+## Requirements
 
-- GPU con soporte Vulkan (NVIDIA, AMD, Intel)
+- Vulkan-capable GPU (NVIDIA, AMD, Intel)
 - Python 3.8+
-- ffmpeg (se descarga automático si no lo tenés)
+- ffmpeg (auto-downloaded if missing)
 
-## Uso rápido
+## Quick start
 
 ```bash
 # Linux/macOS
@@ -26,18 +26,18 @@ Usa el modelo RIFE para interpolar frames y ffmpeg para el encoding. Soporta Lin
 start.bat
 ```
 
-Seguí los pasos del menú: elegí el video, el FPS target y listo.
+Follow the menu: pick your video, choose target FPS, done.
 
-### Por consola
+### CLI
 
 ```bash
 python fps_enhancer.py video.mp4 --target-fps 60
 ```
 
-## Idiomas
+## Languages
 
-Inglés, Español, Alemán, Francés, Portugués, Ruso, Árabe, Chino, Japonés, Coreano.
+English, Spanish, German, French, Portuguese, Russian, Arabic, Chinese, Japanese, Korean.
 
-## Licencia
+## License
 
 MIT
