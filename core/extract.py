@@ -53,6 +53,35 @@ def _watch_progress_cb(output_dir, target_frames, stop_event, cb, file_pattern="
         cb(current / max(1, target_frames))
 
 
+def _resolve_ffmpeg_bin():
+    import shutil
+    if paths.FFMPEG_BIN and paths.FFMPEG_BIN.is_file():
+        return str(paths.FFMPEG_BIN)
+    return shutil.which("ffmpeg") or str(paths.FFMPEG_BIN)
+
+def _get_fps_mode_args():
+    """Return ffmpeg args for passthrough fps mode, compatible with FFmpeg 5-8.
+    FFmpeg 7+ uses -fps_mode, older uses -vsync. Cache detection."""
+    if hasattr(_get_fps_mode_args, "_cached"):
+        return _get_fps_mode_args._cached
+    ffmpeg_bin = _resolve_ffmpeg_bin()
+    try:
+        r = subprocess.run([ffmpeg_bin, "-version"], capture_output=True, text=True, timeout=3)
+        ver = r.stdout + r.stderr
+        import re
+        m = re.search(r"ffmpeg version (\d+)", ver)
+        major = int(m.group(1)) if m else 0
+        # FFmpeg 7+ renamed vsync -> fps_mode
+        if major >= 7:
+            args = ["-fps_mode", "passthrough"]
+        else:
+            args = ["-vsync", "0"]
+    except Exception:
+        args = ["-fps_mode", "passthrough"]
+    _get_fps_mode_args._cached = args
+    return args
+
+
 def extract_frames(video_path, frames_dir, info=None, gpu_settings=None, progress_cb=None):
     if info:
         w = max(info.get("width", 1920), 1920)
@@ -65,11 +94,12 @@ def extract_frames(video_path, frames_dir, info=None, gpu_settings=None, progres
     if not total_est and info:
         total_est = max(int(info.get("fps", 30) * info.get("duration", 60)), 100)
 
+    ffmpeg_bin = _resolve_ffmpeg_bin()
     cmd = [
-        str(paths.FFMPEG_BIN), "-y",
+        ffmpeg_bin, "-y",
         "-threads", "auto",
         "-i", str(video_path),
-        "-vsync", "0",
+        *_get_fps_mode_args(),
         "-q:v", "1",
         str(frames_dir / "%08d.jpg"),
     ]
@@ -93,6 +123,25 @@ def extract_frames(video_path, frames_dir, info=None, gpu_settings=None, progres
         watcher.start()
 
     result = subprocess.run(cmd, capture_output=True, text=True)
+
+    # Fallback for FFmpeg version mismatch (vsync vs fps_mode)
+    if result.returncode != 0 and "Unrecognized option" in (result.stderr or ""):
+        err = result.stderr.lower()
+        fallback = None
+        if "fps_mode" in err:
+            fallback = ["-vsync", "0"]
+        elif "vsync" in err:
+            fallback = ["-fps_mode", "passthrough"]
+        if fallback:
+            cmd_fallback = [
+                ffmpeg_bin, "-y",
+                "-threads", "auto",
+                "-i", str(video_path),
+                *fallback,
+                "-q:v", "1",
+                str(frames_dir / "%08d.jpg"),
+            ]
+            result = subprocess.run(cmd_fallback, capture_output=True, text=True)
 
     stop_event.set()
     watcher.join()
