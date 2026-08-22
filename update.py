@@ -8,6 +8,7 @@ Usage: python3 update.py
 import json
 import os
 import platform
+import re
 import shutil
 import sys
 import tempfile
@@ -20,10 +21,31 @@ REPO = "mincmat/LocallyFPS"
 API_URL = f"https://api.github.com/repos/{REPO}/releases/latest"
 
 ASSET_MAP = {
-    "linux": "LocallyFPS_Linux.zip",
-    "macos": "LocallyFPS_macOS.zip",
-    "windows": "LocallyFPS_Windows.zip",
+    "linux": "LocallyFPS_Linux",
+    "macos": "LocallyFPS_macOS",
+    "windows": "LocallyFPS_Windows",
 }
+
+
+def _pick_asset(assets, base_name):
+    """Match 'LocallyFPS_<Platform>.zip' or 'LocallyFPS_<Platform>_vX.Y.Z.zip'."""
+    pattern = re.compile(
+        r"^" + re.escape(base_name) + r"(_v\d+(?:\.\d+)*)?\.zip$", re.IGNORECASE
+    )
+    matches = [a for a in assets if pattern.match(a.get("name", ""))]
+    if not matches:
+        return None
+
+    def version_key(asset):
+        m = re.search(r"_v(\d+(?:\.\d+)*)\.zip$", asset.get("name", ""), re.IGNORECASE)
+        if m:
+            try:
+                return tuple(int(x) for x in m.group(1).split("."))
+            except ValueError:
+                pass
+        return ()
+
+    return max(matches, key=version_key)
 
 
 def _platform():
@@ -44,7 +66,7 @@ def _print(msg, end="\n"):
 def check_latest():
     """Return {"tag_name": str, "download_url": str, "size": int} or None."""
     plat = _platform()
-    asset_name = ASSET_MAP.get(plat, "")
+    base_name = ASSET_MAP.get(plat, "")
 
     req = Request(API_URL)
     req.add_header("Accept", "application/vnd.github+json")
@@ -66,16 +88,16 @@ def check_latest():
         _print("Error: no release tag found")
         return None
 
-    for asset in data.get("assets", []):
-        if asset.get("name") == asset_name:
-            return {
-                "tag_name": tag,
-                "download_url": asset["browser_download_url"],
-                "size": asset["size"],
-            }
+    asset = _pick_asset(data.get("assets", []), base_name)
+    if not asset:
+        _print(f"Error: no asset matching '{base_name}(_vX.Y.Z)?.zip' in release {tag}")
+        return None
 
-    _print(f"Error: no asset matching '{asset_name}' in release {tag}")
-    return None
+    return {
+        "tag_name": tag,
+        "download_url": asset["browser_download_url"],
+        "size": asset["size"],
+    }
 
 
 def _human_size(size_bytes):
@@ -133,6 +155,23 @@ def update(info):
             zf.extractall(extract_dir)
     except Exception as e:
         _print(f"Error extracting: {e}")
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        shutil.rmtree(extract_dir, ignore_errors=True)
+        return False
+
+    # Flatten single top-level folder so files land directly in extract_dir
+    macosx = extract_dir / "__MACOSX"
+    if macosx.exists():
+        shutil.rmtree(macosx, ignore_errors=True)
+    try:
+        entries = list(extract_dir.iterdir())
+        if len(entries) == 1 and entries[0].is_dir():
+            inner = entries[0]
+            for item in inner.iterdir():
+                shutil.move(str(item), str(extract_dir / item.name))
+            inner.rmdir()
+    except Exception as e:
+        _print(f"Error preparing extracted files: {e}")
         shutil.rmtree(temp_dir, ignore_errors=True)
         shutil.rmtree(extract_dir, ignore_errors=True)
         return False

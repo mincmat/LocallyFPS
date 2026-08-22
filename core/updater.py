@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -25,14 +26,35 @@ def _parse_version(tag):
         return (0, 0, 0)
 
 
-def _get_platform_asset_name():
+def _get_platform_base_name():
     if sys.platform.startswith("linux"):
-        return "LocallyFPS_Linux.zip"
+        return "LocallyFPS_Linux"
     elif sys.platform == "darwin":
-        return "LocallyFPS_macOS.zip"
+        return "LocallyFPS_macOS"
     elif sys.platform == "win32":
-        return "LocallyFPS_Windows.zip"
+        return "LocallyFPS_Windows"
     return None
+
+
+def _pick_asset(assets, base_name):
+    """Match 'LocallyFPS_<Platform>.zip' or 'LocallyFPS_<Platform>_vX.Y.Z.zip'."""
+    pattern = re.compile(
+        r"^" + re.escape(base_name) + r"(_v\d+(?:\.\d+)*)?\.zip$", re.IGNORECASE
+    )
+    matches = [a for a in assets if pattern.match(a.get("name", ""))]
+    if not matches:
+        return None
+
+    def version_key(asset):
+        m = re.search(r"_v(\d+(?:\.\d+)*)\.zip$", asset.get("name", ""), re.IGNORECASE)
+        if m:
+            try:
+                return tuple(int(x) for x in m.group(1).split("."))
+            except ValueError:
+                pass
+        return ()
+
+    return max(matches, key=version_key)
 
 
 def check_for_updates():
@@ -55,21 +77,15 @@ def check_for_updates():
     if latest <= current:
         return None
 
-    asset_name = _get_platform_asset_name()
-    if not asset_name:
+    base_name = _get_platform_base_name()
+    if not base_name:
         return None
 
-    assets = data.get("assets", [])
-    download_url = None
-    for asset in assets:
-        if asset.get("name") == asset_name:
-            download_url = asset.get("browser_download_url")
-            break
-
-    if not download_url:
+    asset = _pick_asset(data.get("assets", []), base_name)
+    if not asset:
         return None
 
-    return (latest_tag, download_url)
+    return (latest_tag, asset.get("browser_download_url"))
 
 
 def _download_with_progress(url, dest, progress_cb=None):
