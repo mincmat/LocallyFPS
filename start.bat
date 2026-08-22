@@ -15,17 +15,49 @@ if not exist "%ENHANCER%" (
 )
 
 set "PYTHON="
-if exist "%LOCAL_PYTHON%" (
-    set "PYTHON=%LOCAL_PYTHON%"
-) else (
-    where python >nul 2>nul
-    if !errorlevel! equ 0 (
-        set "PYTHON=python"
+
+rem 1) Runtime portable incluido junto al programa
+if exist "%LOCAL_PYTHON%" set "PYTHON=%LOCAL_PYTHON%"
+
+rem 2) Launcher oficial de Python (viene con el instalador de python.org)
+if not defined PYTHON (
+    py -3 -c "import sys" >nul 2>nul
+    if !errorlevel! equ 0 set "PYTHON=py -3"
+)
+
+rem 3) python.exe / python3.exe del PATH, verificando que funcionen de verdad.
+rem    El acceso directo de la Microsoft Store existe aunque no haya Python,
+rem    asi que probamos cada candidato antes de usarlo.
+for %%N in (python python3) do (
+    if not defined PYTHON (
+        for /f "delims=" %%P in ('where %%N 2^>nul') do (
+            if not defined PYTHON (
+                "%%~P" -c "import sys" >nul 2>nul
+                if !errorlevel! equ 0 set "PYTHON=%%~P"
+            )
+        )
     )
 )
+
 if not defined PYTHON (
-    echo No Python runtime found.
-    echo Install Python 3 or extract a portable runtime to: %LOCAL_PYTHON%
+    echo No se encontro una instalacion funcional de Python.
+    echo.
+    echo Instalalo desde https://www.python.org/downloads/
+    echo y marca la casilla "Add python.exe to PATH" durante la instalacion.
+    echo.
+    echo Si ya lo tenes instalado, desactiva el alias de la Microsoft Store en:
+    echo Configuracion ^> Aplicaciones ^> Configuracion avanzada de aplicaciones
+    echo ^> Alias de ejecucion de aplicaciones.
+    echo.
+    echo Alternativa: extrae un runtime portable de Python en:
+    echo   %LOCAL_PYTHON%
+    pause
+    exit /b 1
+)
+
+"%PYTHON%" -c "import sys; sys.exit(0 if sys.version_info >= (3, 9) else 1)"
+if !errorlevel! neq 0 (
+    echo Tu version de Python es demasiado vieja. Se requiere 3.9 o superior.
     pause
     exit /b 1
 )
@@ -40,7 +72,7 @@ if not exist "%~dp0videos\enhanced" mkdir "%~dp0videos\enhanced"
 
 "%PYTHON%" "%ENHANCER%" %*
 
-if %errorlevel% neq 0 (
+if !errorlevel! neq 0 (
     echo.
     echo El programa termino con un error. Revisa los mensajes de arriba.
     pause
