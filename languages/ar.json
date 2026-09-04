@@ -213,5 +213,15 @@
   "Installation complete": "اكتمل التثبيت",
   "Installation failed": "فشل التثبيت",
   "Update ready!": "التحديث جاهز!",
-  "Applying update and restarting...": "جاري تطبيق التحديث وإعادة التشغيل..."
+  "Applying update and restarting...": "جاري تطبيق التحديث وإعادة التشغيل...",
+  "Yes": "نعم",
+  "No": "لا",
+  "Do you want to install all missing dependencies?": "هل تريد تثبيت جميع التبعيات المفقودة؟",
+  "ffmpeg/ffprobe not found. Install dependencies first.": "لم يتم العثور على ffmpeg/ffprobe. قم بتثبيت التبعيات أولاً.",
+  "ffmpeg not found. Install dependencies first.": "لم يتم العثور على ffmpeg. قم بتثبيت التبعيات أولاً.",
+  "rife-ncnn-vulkan not found. Install dependencies first.": "لم يتم العثور على rife-ncnn-vulkan. قم بتثبيت التبعيات أولاً.",
+  "Calculating...": "جاري الحساب...",
+  "Discard & exit": "تجاهل والخروج",
+  "Reset settings": "إعادة تعيين الإعدادات",
+  "Reset all settings to default?": "هل تريد إعادة تعيين جميع الإعدادات إلى الافتراضي؟"
 }

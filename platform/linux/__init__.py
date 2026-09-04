@@ -144,29 +144,34 @@ class LinuxPlatform:
                 "uhd": is_uhd_res, "class": cls, "tile_size": tile_size,
                 "ffmpeg_gpu": ffmpeg_gpu}
 
-    def interactive_select(self, prompt, options):
+    def interactive_select(self, prompt, options, disabled=None):
         n = len(options)
         if n == 0:
             return -1
+        disabled = disabled or set()
 
         if not sys.stdin.isatty():
             print(f"\n{Color.bold(prompt)}")
-            for i, opt in enumerate(options):
-                print(f"  {i+1}. {opt}")
+            selectable = [(i, opt) for i, opt in enumerate(options) if i not in disabled]
+            for idx, (i, opt) in enumerate(selectable):
+                print(f"  {idx+1}. {opt}")
             while True:
                 try:
                     resp = input(f"{Color.magenta('>')} ").strip()
                     if resp:
                         idx = int(resp) - 1
-                        if 0 <= idx < n:
-                            return idx
+                        if 0 <= idx < len(selectable):
+                            return selectable[idx][0]
                 except (ValueError, EOFError):
                     pass
-                print(f"{Color.warn(_('Enter a number between 1 and'))} {n}.")
+                print(f"{Color.warn(_('Enter a number between'))} 1 {_('and')} {len(selectable)}.")
 
         fd = sys.stdin.fileno()
         old = termios.tcgetattr(fd)
-        idx = 0
+        selectable = [i for i in range(n) if i not in disabled]
+        if not selectable:
+            return -1
+        idx = selectable[0]
         max_opt = max(len(opt) for opt in options)
         max_w = max_opt + 2
         term_w = shutil.get_terminal_size().columns
@@ -177,8 +182,14 @@ class LinuxPlatform:
                 prompt_pad = max(0, (term_w - len(prompt)) // 2)
                 sys.stdout.write("\r" + " " * prompt_pad + Color.bold(prompt) + "\r\n")
             for i, opt in enumerate(options):
-                sys.stdout.write("\r" + pad + " " + (">" if i == idx else " ") + " " + opt + "\r\n")
+                if i in disabled:
+                    text = Color.dim(opt)
+                    sys.stdout.write("\r" + pad + "   " + text + "\r\n")
+                else:
+                    text = Color.bold(opt) if i == idx else opt
+                    sys.stdout.write("\r" + pad + " " + (">" if i == idx else " ") + " " + text + "\r\n")
             sys.stdout.flush()
+            sel_pos = selectable.index(idx)
             while True:
                 ch = sys.stdin.read(1)
                 if ch == "\x03":
@@ -189,17 +200,39 @@ class LinuxPlatform:
                 if ch == "\x1b":
                     seq = sys.stdin.read(2)
                     if seq == "[A":
-                        idx = (idx - 1) % n
+                        sel_pos = (sel_pos - 1) % len(selectable)
+                        idx = selectable[sel_pos]
                     elif seq == "[B":
-                        idx = (idx + 1) % n
+                        sel_pos = (sel_pos + 1) % len(selectable)
+                        idx = selectable[sel_pos]
+                    elif seq == "[D":
+                        idx = -1
+                        sys.stdout.write(f"\x1b[{n}A")
+                        for i in range(n):
+                            sys.stdout.write("\r\x1b[K\n")
+                        sys.stdout.flush()
+                        break
+                    elif seq == "[C":
+                        total = n + 1
+                        sys.stdout.write(f"\x1b[{total}A")
+                        for i in range(total):
+                            sys.stdout.write("\r\x1b[K\x1b[B")
+                        sys.stdout.write(f"\x1b[{total}A")
+                        sys.stdout.flush()
+                        break
                     sys.stdout.write(f"\x1b[{n}A")
                     for i, opt in enumerate(options):
-                        sys.stdout.write("\r" + pad + " " + (">" if i == idx else " ") + " " + opt + "\x1b[K\r\n")
+                        if i in disabled:
+                            text = Color.dim(opt)
+                            sys.stdout.write("\r" + pad + "   " + text + "\x1b[K\r\n")
+                        else:
+                            text = Color.bold(opt) if i == idx else opt
+                            sys.stdout.write("\r" + pad + " " + (">" if i == idx else " ") + " " + text + "\x1b[K\r\n")
                     sys.stdout.flush()
                 elif ch in ("b", "B"):
                     idx = -1
                     sys.stdout.write(f"\x1b[{n}A")
-                    for _ in range(n):
+                    for i in range(n):
                         sys.stdout.write("\r\x1b[K\n")
                     sys.stdout.flush()
                     break
@@ -216,7 +249,7 @@ class LinuxPlatform:
         sys.stdout.flush()
         return idx
 
-    def interactive_select_video(self, options):
+    def interactive_select_video(self, options, hint=None):
         n = len(options)
         if n == 0:
             return -1
@@ -227,11 +260,20 @@ class LinuxPlatform:
         max_opt = max(len(opt) for opt in options)
         max_w = max_opt + 2
         term_w = shutil.get_terminal_size().columns
+        term_h = shutil.get_terminal_size().lines
         pad = " " * max(0, (term_w - max_w) // 2)
         try:
             tty.setraw(fd)
             for i, opt in enumerate(options):
-                sys.stdout.write(pad + " " + (">" if i == idx else " ") + " " + opt + "\r\n")
+                text = Color.bold(opt) if i == idx else opt
+                sys.stdout.write(pad + " " + (">" if i == idx else " ") + " " + text + "\r\n")
+            # Print hint at bottom right (same row as version, far right)
+            if hint:
+                sys.stdout.write("\x1b[s")
+                hint_col = max(1, term_w - len(hint) - 1)
+                sys.stdout.write(f"\x1b[{term_h};{hint_col}H")
+                sys.stdout.write(Color.dim(hint))
+                sys.stdout.write("\x1b[u")
             sys.stdout.flush()
             while True:
                 ch = sys.stdin.read(1)
@@ -246,9 +288,32 @@ class LinuxPlatform:
                         idx = (idx - 1) % n
                     elif seq == "[B":
                         idx = (idx + 1) % n
+                    elif seq == "[D":
+                        idx = -1
+                        sys.stdout.write(f"\x1b[{n}A")
+                        for _ in range(n):
+                            sys.stdout.write("\r\x1b[K\n")
+                        sys.stdout.flush()
+                        break
+                    elif seq == "[C":
+                        total = n
+                        sys.stdout.write(f"\x1b[{total}A")
+                        for i in range(total):
+                            sys.stdout.write("\r\x1b[K\x1b[B")
+                        sys.stdout.write(f"\x1b[{total}A")
+                        sys.stdout.flush()
+                        break
                     sys.stdout.write(f"\x1b[{n}A")
                     for i, opt in enumerate(options):
-                        sys.stdout.write("\r" + pad + " " + (">" if i == idx else " ") + " " + opt + "\x1b[K\r\n")
+                        text = Color.bold(opt) if i == idx else opt
+                        sys.stdout.write("\r" + pad + " " + (">" if i == idx else " ") + " " + text + "\x1b[K\r\n")
+                    # Reprint hint at bottom right
+                    if hint:
+                        sys.stdout.write("\x1b[s")
+                        hint_col = max(1, term_w - len(hint) - 1)
+                        sys.stdout.write(f"\x1b[{term_h};{hint_col}H")
+                        sys.stdout.write(Color.dim(hint))
+                        sys.stdout.write("\x1b[u")
                     sys.stdout.flush()
                 elif ch in ("b", "B"):
                     idx = -1

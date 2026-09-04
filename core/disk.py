@@ -26,4 +26,4 @@ def check_disk_space(path, estimated_bytes):
 
 
 def estimate_frame_storage(width, height, frame_count):
-    return int(width * height * 3 * frame_count * 0.4)
+    return int(width * height * 3 * frame_count * 0.08)

@@ -213,5 +213,15 @@
   "Installation complete": "설치 완료",
   "Installation failed": "설치 실패",
   "Update ready!": "업데이트 준비 완료!",
-  "Applying update and restarting...": "업데이트 적용 및 재시작 중..."
+  "Applying update and restarting...": "업데이트 적용 및 재시작 중...",
+  "Yes": "예",
+  "No": "아니오",
+  "Do you want to install all missing dependencies?": "누락된 모든 종속성을 설치하시겠습니까?",
+  "ffmpeg/ffprobe not found. Install dependencies first.": "ffmpeg/ffprobe를 찾을 수 없습니다. 먼저 종속성을 설치하세요.",
+  "ffmpeg not found. Install dependencies first.": "ffmpeg를 찾을 수 없습니다. 먼저 종속성을 설치하세요.",
+  "rife-ncnn-vulkan not found. Install dependencies first.": "rife-ncnn-vulkan을 찾을 수 없습니다. 먼저 종속성을 설치하세요.",
+  "Calculating...": "계산 중...",
+  "Discard & exit": "취소하고 종료",
+  "Reset settings": "설정 초기화",
+  "Reset all settings to default?": "모든 설정을 기본값으로 초기화하시겠습니까?"
 }

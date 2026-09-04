@@ -26,9 +26,7 @@ def install_model(model_name):
     model_dir = models_dir / model_name
     if model_dir.is_dir():
         return True
-    status(f"{_('Downloading model')} {model_name}...")
-    os_name = paths.OS_NAME
-    url = RIFE_RELEASE_URLS.get(os_name)
+    url = RIFE_RELEASE_URLS().get(paths.OS_NAME)
     if not url:
         status(_("No download URL for models on this platform."), "ERROR")
         return False
@@ -37,7 +35,13 @@ def install_model(model_name):
         dl = DownloadProgress(_("Downloading"))
         try:
             urllib.request.urlretrieve(url, zip_path, reporthook=dl)
+        except KeyboardInterrupt:
+            dl.close()
+            print()
+            status(_("Download cancelled."), "WARN")
+            return False
         except Exception as exc:
+            dl.close()
             status(f"{_('Download failed:')} {exc}", "ERROR")
             return False
         finally:

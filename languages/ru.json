@@ -213,5 +213,15 @@
   "Installation complete": "Установка завершена",
   "Installation failed": "Ошибка установки",
   "Update ready!": "Обновление готово!",
-  "Applying update and restarting...": "Применение обновления и перезапуск..."
+  "Applying update and restarting...": "Применение обновления и перезапуск...",
+  "Yes": "Да",
+  "No": "Нет",
+  "Do you want to install all missing dependencies?": "Установить все отсутствующие зависимости?",
+  "ffmpeg/ffprobe not found. Install dependencies first.": "ffmpeg/ffprobe не найден. Сначала установите зависимости.",
+  "ffmpeg not found. Install dependencies first.": "ffmpeg не найден. Сначала установите зависимости.",
+  "rife-ncnn-vulkan not found. Install dependencies first.": "rife-ncnn-vulkan не найден. Сначала установите зависимости.",
+  "Calculating...": "Вычисление...",
+  "Discard & exit": "Отменить и выйти",
+  "Reset settings": "Сбросить настройки",
+  "Reset all settings to default?": "Сбросить все настройки по умолчанию?"
 }

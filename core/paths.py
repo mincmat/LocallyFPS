@@ -2,7 +2,7 @@ import os
 import sys
 from pathlib import Path
 
-APP_VERSION = "2.0.2"
+APP_VERSION = "3.0-beta"
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 FFMPEG_BIN = None
@@ -54,10 +54,6 @@ def setup(base_dir):
     _RIFE_DIR = BASE_DIR / "deps" / "rife"
     CONFIG_PATH = CONFIG_DIR / "settings.json"
     LANG_DIR = BASE_DIR / "languages"
-    if not LANG_DIR.is_dir():
-        LANG_DIR = BASE_DIR.parent / "core" / "languages"
-    if not LANG_DIR.is_dir():
-        LANG_DIR = BASE_DIR / "core" / "languages"
 
 
 REQUIRED_DIRS = []
@@ -77,9 +73,4 @@ def ensure_dirs():
 
 
 def any_dep_missing():
-    import shutil
-    ffmpeg_check = FFMPEG_BIN.is_file() or shutil.which(f"ffmpeg{BIN_EXT}")
-    ffprobe_check = FFPROBE_BIN.is_file() or shutil.which(f"ffprobe{BIN_EXT}")
-    rife_check = RIFE_BIN.is_file() or shutil.which(f"rife-ncnn-vulkan{BIN_EXT}")
-    model_check = (MODELS_DIR / "rife-v4.6").is_dir()
-    return not (ffmpeg_check and ffprobe_check and rife_check and model_check)
+    return not (FFMPEG_BIN.is_file() and FFPROBE_BIN.is_file() and RIFE_BIN.is_file() and (MODELS_DIR / "rife-v4.6").is_dir())

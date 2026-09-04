@@ -122,9 +122,15 @@ def extract_frames(video_path, frames_dir, info=None, gpu_settings=None, progres
         )
         watcher.start()
 
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True)
+    except FileNotFoundError:
+        stop_event.set()
+        watcher.join()
+        status(_("ffmpeg not found. Install dependencies first."), "ERROR")
+        return 0
 
-    # Fallback for FFmpeg version mismatch (vsync vs fps_mode)
+# Fallback for FFmpeg version mismatch (vsync vs fps_mode)
     if result.returncode != 0 and "Unrecognized option" in (result.stderr or ""):
         err = result.stderr.lower()
         fallback = None

@@ -202,5 +202,15 @@
   "Installation complete": "インストール完了",
   "Installation failed": "インストール失敗",
   "Update ready!": "更新の準備完了！",
-  "Applying update and restarting...": "更新を適用して再起動中..."
+  "Applying update and restarting...": "更新を適用して再起動中...",
+  "Yes": "はい",
+  "No": "いいえ",
+  "Do you want to install all missing dependencies?": "不足しているすべての依存関係をインストールしますか？",
+  "ffmpeg/ffprobe not found. Install dependencies first.": "ffmpeg/ffprobeが見つかりません。先に依存関係をインストールしてください。",
+  "ffmpeg not found. Install dependencies first.": "ffmpegが見つかりません。先に依存関係をインストールしてください。",
+  "rife-ncnn-vulkan not found. Install dependencies first.": "rife-ncnn-vulkanが見つかりません。先に依存関係をインストールしてください。",
+  "Calculating...": "計算中...",
+  "Discard & exit": "破棄して終了",
+  "Reset settings": "設定をリセット",
+  "Reset all settings to default?": "すべての設定をデフォルトにリセットしますか？"
 }

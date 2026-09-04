@@ -20,10 +20,11 @@ CURRENT_VERSION = paths.APP_VERSION
 
 def _parse_version(tag):
     tag = tag.lstrip("v").strip()
-    try:
-        return tuple(int(x) for x in tag.split("."))
-    except (ValueError, AttributeError):
-        return (0, 0, 0)
+    import re
+    m = re.match(r"(\d+)\.(\d+)\.(\d+)", tag)
+    if m:
+        return tuple(map(int, m.groups()))
+    return (0, 0, 0)
 
 
 def _get_platform_base_name():
@@ -205,9 +206,20 @@ def _create_swap_script(current_dir, update_dir, parent_dir):
 def run_updater():
     result = check_for_updates()
     if result is None:
-        print(f"\n  {Color.ok(_('You are running the latest version.'))}")
-        print(f"  {Color.dim('v' + CURRENT_VERSION)}\n")
-        input(f"  {Color.dim(_('Press Enter to continue...'))}")
+        term = shutil.get_terminal_size()
+        msg_ok = Color.ok(_('You are running the latest version.'))
+        msg_ver = Color.dim('v' + CURRENT_VERSION)
+        msg_enter = Color.dim(_('Press Enter to continue...'))
+        clean_ok = re.sub(r'\033\[[0-9;]*m', '', msg_ok)
+        clean_ver = re.sub(r'\033\[[0-9;]*m', '', msg_ver)
+        clean_enter = re.sub(r'\033\[[0-9;]*m', '', msg_enter)
+        pad_ok = max(0, (term.columns - len(clean_ok)) // 2)
+        pad_ver = max(0, (term.columns - len(clean_ver)) // 2)
+        pad_enter = max(0, (term.columns - len(clean_enter)) // 2)
+        print(f"\n\n\n")
+        print(f"{' ' * pad_ok}{msg_ok}")
+        print(f"{' ' * pad_ver}{msg_ver}\n")
+        input(f"{' ' * pad_enter}{msg_enter}")
         return
 
     version, url = result
@@ -222,7 +234,6 @@ def run_updater():
         return
 
     from .progress import Spinner
-    import re
 
     tmp = Path(tempfile.gettempdir()) / f"locallyfps_update_{os.getpid()}.zip"
 

@@ -1,6 +1,5 @@
 import json
-from . import paths
-from .config import CONFIG
+from . import paths, config
 
 TRANSLATIONS = {}
 
@@ -27,7 +26,7 @@ def load_translations():
 
 
 def _(text):
-    lang = CONFIG.get("language", "en")
+    lang = config.CONFIG.get("language", "en")
     if lang in TRANSLATIONS and text in TRANSLATIONS[lang]:
         return TRANSLATIONS[lang][text]
     return text

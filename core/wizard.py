@@ -6,7 +6,8 @@ from pathlib import Path
 
 from . import paths
 from .colors import Color
-from .config import CONFIG, DEFAULT_CONFIG
+from . import config
+from .config import DEFAULT_CONFIG
 from .console import status, ask_yes_no
 from .gpu import choose_gpu_settings
 from .i18n import _
@@ -46,15 +47,19 @@ def prompt_for_video():
     if not video_files:
         sys.stdout.write("\033[2J\033[H\033[3J")
         _write_version_corner()
+        term_h = shutil.get_terminal_size().lines
         header = _("SELECT A VIDEO")
         hp = max(0, (term_w - len(header)) // 2)
         msg1 = _("No videos found in videos/original/")
         msg2 = _("Place your videos in the videos/original/ folder to process them.")
-        sys.stdout.write("\n\n\n")
+        msg1_pad = max(0, (term_w - len(msg1)) // 2)
+        msg2_pad = max(0, (term_w - len(msg2)) // 2)
+        # 4 lines of content
+        vpad = max(0, (term_h - 4) // 2)
+        sys.stdout.write("\n" * vpad)
         sys.stdout.write(" " * hp + Color.accent_bold(header) + "\n\n")
-        sys.stdout.write(" " * max(0, (term_w - len(msg1)) // 2) + Color.warn(msg1) + "\n")
-        sys.stdout.write(" " * max(0, (term_w - len(msg2)) // 2) + Color.dim(msg2) + "\n")
-        sys.stdout.write("\n")
+        sys.stdout.write(" " * msg1_pad + Color.warn(msg1) + "\n")
+        sys.stdout.write(" " * msg2_pad + Color.dim(msg2) + "\n")
         sys.stdout.flush()
         try:
             raw = input(" " * max(0, (term_w - 3) // 2) + "b " + Color.dim(_("(Back)")) + " ").strip()
@@ -66,19 +71,21 @@ def prompt_for_video():
 
     sys.stdout.write("\033[2J\033[H\033[3J")
     _write_version_corner()
+    term_h = shutil.get_terminal_size().lines
     header = _("SELECT A VIDEO")
     hp = max(0, (term_w - len(header)) // 2)
     sub = _("videos/original/")
     sp = max(0, (term_w - len(sub)) // 2)
-    sys.stdout.write("\n\n")
+    # Center vertically: 3 lines of content (header, sub, blank)
+    vpad = max(0, (term_h - 3) // 2)
+    sys.stdout.write("\n" * vpad)
     sys.stdout.write(" " * hp + Color.accent_bold(header) + "\n")
     sys.stdout.write(" " * sp + Color.dim(sub) + "\n\n")
-    hint = _("Up/Down to navigate, Enter to select, B to go back")
-    sys.stdout.write(" " * max(0, (term_w - len(hint)) // 2) + Color.dim(hint) + "\n\n\n")
     sys.stdout.flush()
 
     if sys.stdin.isatty():
-        i = plat.interactive_select_video(video_names)
+        hint = _("B to go back")
+        i = plat.interactive_select_video(video_names, hint)
         if i < 0 or i >= len(video_files):
             return None
         selected_video = video_files[i]
@@ -143,7 +150,8 @@ def _prompt_fps_raw(source_fps):
     try:
         tty.setraw(fd)
         term_w = shutil.get_terminal_size().columns
-        prompt_pad = " " * max(0, (term_w - 2) // 2)
+        cur_fps = f"{_('Current')}: {format_fps(source_fps)}"
+        prompt_pad = " " * max(0, (term_w - len(cur_fps)) // 2 + 4)
         while True:
             buf = ""
             sys.stdout.write(prompt_pad + f"{Color.magenta('>')} ")
@@ -189,6 +197,7 @@ def _prompt_fps_raw(source_fps):
 
 def prompt_for_fps(source_fps, video_name=None):
     term_w = shutil.get_terminal_size().columns
+    term_h = shutil.get_terminal_size().lines
     sys.stdout.write("\033[2J\033[H\033[3J")
     _write_version_corner()
     header = _("TARGET FPS")
@@ -196,13 +205,19 @@ def prompt_for_fps(source_fps, video_name=None):
     cur_fps = f"{_('Current')}: {format_fps(source_fps)}"
     cp = max(0, (term_w - len(cur_fps)) // 2)
 
-    sys.stdout.write("\n\n\n")
     if video_name:
         np = max(0, (term_w - len(video_name)) // 2)
-        sys.stdout.write(" " * np + Color.bold(video_name) + "\n\n")
+        video_line = " " * np + Color.bold(video_name) + "\n\n"
+    else:
+        video_line = ""
+    # Center vertically based on actual content lines
+    content_lines = 3 + (2 if video_name else 0)
+    vpad = _centered_vpad(content_lines)
+    sys.stdout.write("\n" * vpad)
+    if video_name:
+        sys.stdout.write(video_line)
     sys.stdout.write(" " * hp + Color.accent_bold(header) + "\n")
     sys.stdout.write(" " * cp + Color.dim(cur_fps) + "\n")
-    sys.stdout.write("\n")
     sys.stdout.flush()
 
     if sys.platform.startswith("linux") and sys.stdin.isatty():
@@ -250,6 +265,7 @@ LOGO_LINES = [
 
 
 def _write_version_corner():
+    term_w = shutil.get_terminal_size().columns
     term_h = shutil.get_terminal_size().lines
     sys.stdout.write("\x1b[s")
     sys.stdout.write(f"\x1b[{term_h};1H")
@@ -258,13 +274,61 @@ def _write_version_corner():
     sys.stdout.flush()
 
 
-def interactive_wizard():
-    from .deps import ensure_ffmpeg, ensure_rife
-    from .models import ensure_default_model
-    ensure_ffmpeg()
-    ensure_rife()
-    ensure_default_model()
+def _centered_vpad(content_lines):
+    """Calculate vertical padding to center content_lines in terminal."""
+    term_h = shutil.get_terminal_size().lines
+    return max(0, (term_h - content_lines) // 2)
 
+
+def _show_language_selector():
+    from .i18n import LANGUAGE_NAMES, LANG_CODES, load_translations
+    from .config import save_config
+    from platform import get_platform
+
+    plat = get_platform()
+    term_w, term_h = shutil.get_terminal_size().columns, shutil.get_terminal_size().lines
+
+    sys.stdout.write("\033[2J\033[H\033[3J")
+    _write_version_corner()
+
+    logo_vis_w = max(sum(2 if ch == '█' else 1 for ch in line) for line in LOGO_LINES)
+    has_logo = term_w >= logo_vis_w + 4
+    # Center logo (6 lines) + blank + subtitle + blank = 14 lines (matches main menu)
+    vpad = _centered_vpad(14)
+    sys.stdout.write("\n" * vpad)
+
+    if has_logo:
+        logo_raw_w = max(len(line) for line in LOGO_LINES)
+        logo_pad = max(0, (term_w - logo_raw_w) // 2)
+        for line in LOGO_LINES:
+            sys.stdout.write(" " * logo_pad + _gradient_line(line) + "\n")
+    else:
+        title = "=== LocallyFPS ==="
+        sys.stdout.write(" " * max(0, (term_w - len(title)) // 2) + Color.accent_bold(title) + "\n")
+
+    sys.stdout.write("\n\n")
+    subtitle = "Select your language"
+    sp = max(0, (term_w - len(subtitle)) // 2)
+    sys.stdout.write(" " * sp + Color.bold(subtitle) + "\n\n")
+    sys.stdout.flush()
+
+    lang_names = [LANGUAGE_NAMES[c] for c in LANG_CODES]
+    i = plat.interactive_select("", lang_names)
+
+    if 0 <= i < len(LANG_CODES):
+        config.CONFIG["language"] = LANG_CODES[i]
+        save_config()
+        load_translations()
+    else:
+        config.CONFIG["language"] = "en"
+        save_config()
+        load_translations()
+
+    sys.stdout.write("\033[2J\033[H\033[3J")
+    sys.stdout.flush()
+
+
+def interactive_wizard():
     from platform import get_platform
     plat = get_platform()
 
@@ -281,10 +345,10 @@ def interactive_wizard():
         sys.stdout.write("\033[H")
         _write_version_corner()
 
-        logo_vis_w = max(len(line) + line.count('█') for line in LOGO_LINES)
+        logo_vis_w = max(sum(2 if ch == '█' else 1 for ch in line) for line in LOGO_LINES)
         has_logo = term_w >= logo_vis_w + 4
-        header_lines = (len(LOGO_LINES) + 1) if has_logo else 2
-        vpad = max(0, (term_h - header_lines - len(menu_items)) // 2 - 5)
+        # Center logo (6 lines) + blank + 4 menu items = 14 lines (1 line higher)
+        vpad = _centered_vpad(14)
         sys.stdout.write("\n" * vpad)
 
         if has_logo:
@@ -295,7 +359,7 @@ def interactive_wizard():
         else:
             title = f"=== LocallyFPS ==="
             sys.stdout.write(" " * max(0, (term_w - len(title)) // 2) + Color.accent_bold(title) + "\n")
-        sys.stdout.write("\n\n\n\n")
+        sys.stdout.write("\n\n")
         sys.stdout.flush()
 
         i = plat.interactive_select("", menu_items)
@@ -392,23 +456,68 @@ def main():
     from .deps import ensure_ffmpeg, ensure_rife
     from .models import ensure_default_model
     from .paths import ensure_dirs, any_dep_missing
+    from .progress import DependencyBar
 
     ensure_dirs()
+    is_first_run = not paths.CONFIG_PATH.exists()
     load_config()
     load_translations()
 
-    is_first_run = not paths.CONFIG_PATH.exists() or "language" not in CONFIG
-    if is_first_run:
-        from .settings import _run_language_wizard
-        _run_language_wizard()
+    if is_first_run and sys.stdout.isatty():
+        _show_language_selector()
+
+    if sys.stdout.isatty():
+        from .deps import _setup_system_paths
+        _setup_system_paths()
 
     if sys.stdout.isatty() and any_dep_missing():
-        if ask_yes_no(_("Do you want to install all missing dependencies?"), default=True):
-            sp = Spinner(_("Installing dependencies..."))
-            ensure_ffmpeg(auto_yes=True)
-            ensure_rife(auto_yes=True)
+        from platform import get_platform
+        plat = get_platform()
+        term_w, term_h = shutil.get_terminal_size().columns, shutil.get_terminal_size().lines
+        sys.stdout.write("\033[2J\033[H\033[3J")
+        _write_version_corner()
+        logo_vis_w = max(sum(2 if ch == '█' else 1 for ch in line) for line in LOGO_LINES)
+        has_logo = term_w >= logo_vis_w + 4
+        # Center logo (6 lines) + blank + question + blank + 2 options = 14 lines (matches main menu)
+        vpad = _centered_vpad(14)
+        sys.stdout.write("\n" * vpad)
+        if has_logo:
+            logo_raw_w = max(len(line) for line in LOGO_LINES)
+            logo_pad = max(0, (term_w - logo_raw_w) // 2)
+            for line in LOGO_LINES:
+                sys.stdout.write(" " * logo_pad + _gradient_line(line) + "\n")
+        else:
+            title = "=== LocallyFPS ==="
+            sys.stdout.write(" " * max(0, (term_w - len(title)) // 2) + Color.accent_bold(title) + "\n")
+        sys.stdout.write("\n\n")
+        question = _("Do you want to install all missing dependencies?")
+        qp = max(0, (term_w - len(question)) // 2)
+        sys.stdout.write(" " * qp + Color.bold(question) + "\n\n")
+        sys.stdout.flush()
+        i = plat.interactive_select("", [_("Yes"), _("No")])
+        if i == 0:
+            sys.stdout.write("\033[2J\033[H\033[3J")
+            _write_version_corner()
+            if has_logo:
+                logo_raw_w = max(len(line) for line in LOGO_LINES)
+                logo_pad = max(0, (term_w - logo_raw_w) // 2)
+                vpad = _centered_vpad(14)
+                sys.stdout.write("\n" * vpad)
+                for line in LOGO_LINES:
+                    sys.stdout.write(" " * logo_pad + _gradient_line(line) + "\n")
+                sys.stdout.write("\n\n")
+            bar = DependencyBar(_("Installing dependencies"))
+            ok = True
+            if not ensure_ffmpeg(auto_yes=True, bar=bar):
+                ok = False
+            if not ensure_rife(auto_yes=True, bar=bar):
+                ok = False
+            if ok:
+                bar.ok(_("All dependencies ready"))
+            else:
+                bar.fail(_("Some dependencies could not be installed"))
+                sys.exit(1)
             ensure_default_model(auto_yes=True)
-            sp.ok(_("All dependencies ready"))
 
     args = parse_args()
 

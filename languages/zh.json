@@ -213,5 +213,15 @@
   "Installation complete": "安装完成",
   "Installation failed": "安装失败",
   "Update ready!": "更新已就绪！",
-  "Applying update and restarting...": "正在应用更新并重启..."
+  "Applying update and restarting...": "正在应用更新并重启...",
+  "Yes": "是",
+  "No": "否",
+  "Do you want to install all missing dependencies?": "是否安装所有缺失的依赖项？",
+  "ffmpeg/ffprobe not found. Install dependencies first.": "未找到ffmpeg/ffprobe。请先安装依赖项。",
+  "ffmpeg not found. Install dependencies first.": "未找到ffmpeg。请先安装依赖项。",
+  "rife-ncnn-vulkan not found. Install dependencies first.": "未找到rife-ncnn-vulkan。请先安装依赖项。",
+  "Calculating...": "计算中...",
+  "Discard & exit": "丢弃并退出",
+  "Reset settings": "重置设置",
+  "Reset all settings to default?": "是否将所有设置重置为默认值？"
 }

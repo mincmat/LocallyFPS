@@ -10,6 +10,7 @@ except ImportError:
     HAS_TQDM = False
 
 from .colors import Color
+from .i18n import _
 from .utils import format_duration
 
 
@@ -27,6 +28,16 @@ class ProgressBar:
         self.current += n
         self._draw()
 
+    @staticmethod
+    def _fmt_size(n):
+        if n < 0:
+            return "0B"
+        for unit in ("B", "KB", "MB", "GB"):
+            if abs(n) < 1024:
+                return f"{n:.1f}{unit}" if unit != "B" else f"{n}B"
+            n /= 1024
+        return f"{n:.1f}TB"
+
     def _draw(self):
         if not self._enabled:
             return
@@ -43,7 +54,7 @@ class ProgressBar:
             eta_str = f"{eta:.0f}s"
         sys.stdout.write(
             f"\r{Color.bold(self.desc)}: |{bar}| "
-            f"{self.current}/{self.total} ({pct*100:.1f}%) "
+            f"{self._fmt_size(self.current)}/{self._fmt_size(self.total)} ({pct*100:.1f}%) "
             f"ETA {eta_str}  "
         )
         sys.stdout.flush()
@@ -83,7 +94,8 @@ class DownloadProgress:
 
 class PipelineBar:
     """Single centered progress bar with box-drawing borders.
-    Uses absolute cursor positioning for robustness."""
+    Uses absolute cursor positioning for robustness.
+    Includes smart ETA using EWMA (Exponential Weighted Moving Average)."""
 
     def __init__(self, width=20, box_width=50, header=None, enabled=None):
         self.width = width
@@ -91,6 +103,10 @@ class PipelineBar:
         self._inner = box_width - 2
         self._enabled = enabled if enabled is not None else sys.stdout.isatty()
         self._last = -1
+        self._start_time = time.time()
+        self._history = []  # [(time, progress), ...]
+        self._ewma_rate = None  # frames per second (EWMA smoothed)
+        self._alpha = 0.3  # EWMA smoothing factor
         if not self._enabled:
             return
         term = shutil.get_terminal_size()
@@ -111,13 +127,65 @@ class PipelineBar:
             sys.stdout.write("\n" * 5)
         self._top_line = "┌" + "─" * self._inner + "┐"
         self._bot_line = "└" + "─" * self._inner + "┘"
-        mid = "│" + " " * self._inner + "│"
-        self._box_row = rows + h_total + 6
+        empty = "│" + " " * self._inner + "│"
+        self._box_row = rows + h_total + 5
         sys.stdout.write(f"{self._box_pad}{self._top_line}\n")
-        sys.stdout.write(f"{self._box_pad}{mid}\n")
-        sys.stdout.write(f"{self._box_pad}{mid}\n")
+        sys.stdout.write(f"{self._box_pad}{empty}\n")
+        sys.stdout.write(f"{self._box_pad}{empty}\n")
+        sys.stdout.write(f"{self._box_pad}{empty}\n")
+        sys.stdout.write(f"{self._box_pad}{empty}\n")
+        sys.stdout.write(f"{self._box_pad}{empty}\n")
         sys.stdout.write(f"{self._box_pad}{self._bot_line}\n")
         sys.stdout.flush()
+
+    def _calc_eta(self, pct):
+        """Calculate ETA using EWMA-smoothed processing rate."""
+        now = time.time()
+        elapsed = now - self._start_time
+
+        # Need at least 3 seconds and 2% progress for stable ETA
+        if elapsed < 3.0 or pct < 0.02:
+            return None
+
+        # Record this data point
+        self._history.append((now, pct))
+
+        # Keep only last 10 data points for responsiveness
+        if len(self._history) > 10:
+            self._history = self._history[-10:]
+
+        # Calculate rate using EWMA
+        if len(self._history) >= 2:
+            t0, p0 = self._history[0]
+            t1, p1 = self._history[-1]
+            dt = t1 - t0
+            dp = p1 - p0
+            if dt > 0 and dp > 0:
+                instant_rate = dp / dt  # progress per second
+                if self._ewma_rate is None:
+                    self._ewma_rate = instant_rate
+                else:
+                    self._ewma_rate = self._alpha * instant_rate + (1 - self._alpha) * self._ewma_rate
+
+        if self._ewma_rate and self._ewma_rate > 0:
+            remaining = (1.0 - pct) / self._ewma_rate
+            return remaining
+        return None
+
+    def _fmt_eta(self, seconds):
+        """Format seconds into human-readable ETA."""
+        if seconds is None or seconds < 0:
+            return ""
+        if seconds < 60:
+            return f"ETA {seconds:.0f}s"
+        elif seconds < 3600:
+            m = int(seconds // 60)
+            s = int(seconds % 60)
+            return f"ETA {m}m {s:02d}s"
+        else:
+            h = int(seconds // 3600)
+            m = int((seconds % 3600) // 60)
+            return f"ETA {h}h {m:02d}m"
 
     def update(self, pct, label=None):
         if not self._enabled:
@@ -134,18 +202,48 @@ class PipelineBar:
         else:
             label_line = "│" + " " * self._inner + "│"
 
-        filled = int(self.width * pct)
-        bar = "#" * filled + "-" * (self.width - filled)
-        pct_str = f" {pct * 100:5.1f}%"
-        bl = (self._inner - self.width - 7) // 2
-        tail = self._inner - self.width - 7 - bl
-        bar_line = "│" + " " * bl + bar + pct_str + " " * tail + "│"
+        # Calculate ETA
+        eta_secs = self._calc_eta(pct)
+        eta_str = self._fmt_eta(eta_secs)
 
+        # Bar line: just bar + percentage
+        filled = int(self.width * pct)
+        bar = "█" * filled + "░" * (self.width - filled)
+        pct_str = f" {pct * 100:5.1f}%"
+        bar_content = f"{bar}{pct_str}"
+        blen = len(bar_content)
+        if blen < self._inner:
+            bl = (self._inner - blen) // 2
+            tail = self._inner - bl - blen
+        else:
+            bl = 0
+            tail = 0
+            bar_content = bar_content[:self._inner]
+        bar_line = "│" + " " * bl + bar_content + " " * tail + "│"
+
+        # ETA line: centered below bar
+        if eta_str:
+            eta_display = eta_str
+        else:
+            eta_display = Color.dim(_("Calculating..."))
+
+        empty = "│" + " " * self._inner + "│"
+        # Move cursor to bottom border row, write it, then write ETA on next line
         sys.stdout.write(f"\033[{self._box_row};1H"
                          f"{self._box_pad}{self._top_line}\x1b[K\n"
+                         f"{self._box_pad}{empty}\x1b[K\n"
                          f"{self._box_pad}{label_line}\x1b[K\n"
+                         f"{self._box_pad}{empty}\x1b[K\n"
                          f"{self._box_pad}{bar_line}\x1b[K\n"
+                         f"{self._box_pad}{empty}\x1b[K\n"
                          f"{self._box_pad}{self._bot_line}\x1b[K\n")
+        # ETA outside the box, two lines below bottom border
+        eta_clean = re.sub(r'\033\[[0-9;]*m', '', eta_display)
+        ep = max(0, (self._term_w - len(eta_clean)) // 2)
+        sys.stdout.write(f"\r\033[K\n"
+                         f"\r\033[K"
+                         f"{' ' * ep}{eta_display}\n")
+        sys.stdout.flush()
         sys.stdout.flush()
 
     def close(self):
@@ -189,3 +287,127 @@ class Spinner:
             else:
                 sys.stdout.write(f"\r{self._pad}{check} {final}\n")
             sys.stdout.flush()
+
+
+class DependencyBar:
+    """Centered box progress bar for dependency downloads.
+    Appears inline without clearing the screen."""
+
+    def __init__(self, title="Installing dependencies", box_width=52, bar_width=20, enabled=None):
+        self._box_w = box_width
+        self._inner = box_width - 2
+        self._bar_w = bar_width
+        self._enabled = enabled if enabled is not None else sys.stdout.isatty()
+        self._last_pct = -1
+        self._start = time.time()
+        self._closed = False
+        if not self._enabled:
+            return
+        term = shutil.get_terminal_size()
+        self._term_w = term.columns
+        self._box_pad = " " * max(0, (self._term_w - self._box_w) // 2)
+        self._top = "┌" + "─" * self._inner + "┐"
+        self._bot = "└" + "─" * self._inner + "┘"
+        ct = re.sub(r'\033\[[0-9;]*m', '', title)
+        tp = max(0, (self._inner - len(ct)) // 2)
+        self._title = "│" + " " * tp + title + " " * (self._inner - tp - len(ct)) + "│"
+        empty = "│" + " " * self._inner + "│"
+        sys.stdout.write(f"{self._box_pad}{self._top}\n")
+        sys.stdout.write(f"{self._box_pad}{empty}\n")
+        sys.stdout.write(f"{self._box_pad}{self._title}\n")
+        sys.stdout.write(f"{self._box_pad}{empty}\n")
+        sys.stdout.write(f"{self._box_pad}{empty}\n")
+        sys.stdout.write(f"{self._box_pad}{empty}\n")
+        sys.stdout.write(f"{self._box_pad}{self._bot}\n")
+        # 7 rows total. Cursor at row 8.
+        # Row 5 = bar placeholder. update/ok/fail: \033[3A → row 5, write 3 rows.
+        sys.stdout.flush()
+
+    def _fmt_size(self, n):
+        if n < 0:
+            return "0B"
+        for unit in ("B", "KB", "MB", "GB"):
+            if abs(n) < 1024:
+                return f"{n:.1f}{unit}" if unit != "B" else f"{n}B"
+            n /= 1024
+        return f"{n:.1f}TB"
+
+    def update(self, pct, label=None, downloaded=None, total=None):
+        if not self._enabled or self._closed:
+            return
+        pct = max(0.0, min(1.0, pct))
+        if abs(pct - self._last_pct) < 0.005 and label is None:
+            return
+        self._last_pct = pct
+
+        if label:
+            clean = re.sub(r'\033\[[0-9;]*m', '', label)
+            lp = max(0, (self._inner - len(clean)) // 2)
+            label_line = "│" + " " * lp + label + " " * (self._inner - lp - len(clean)) + "│"
+        else:
+            label_line = "│" + " " * self._inner + "│"
+
+        filled = int(self._bar_w * pct)
+        bar = "█" * filled + "░" * (self._bar_w - filled)
+        if downloaded is not None and total is not None and total > 0:
+            size_str = f"{self._fmt_size(downloaded)}/{self._fmt_size(total)}"
+            pct_str = f" {pct*100:5.1f}%"
+            info = f" {size_str}{pct_str}"
+        else:
+            info = f" {pct*100:5.1f}%"
+        bar_content = bar + info
+        blen = len(bar_content)
+        if blen < self._inner:
+            bl = (self._inner - blen) // 2
+            tail = self._inner - bl - blen
+        else:
+            bl = 0
+            tail = 0
+            bar_content = bar_content[:self._inner]
+        bar_line = "│" + " " * bl + bar_content + " " * tail + "│"
+
+        empty = "│" + " " * self._inner + "│"
+        sys.stdout.write("\033[3A")
+        sys.stdout.write(f"{self._box_pad}{bar_line}\x1b[K\n")
+        sys.stdout.write(f"{self._box_pad}{empty}\x1b[K\n")
+        sys.stdout.write(f"{self._box_pad}{self._bot}\x1b[K\n")
+        sys.stdout.flush()
+
+    def ok(self, msg=None):
+        if self._closed:
+            return
+        self._closed = True
+        if not self._enabled:
+            return
+        elapsed = time.time() - self._start
+        final = msg or "Done"
+        clean = re.sub(r'\033\[[0-9;]*m', '', final)
+        lp = max(0, (self._inner - len(clean) - 4) // 2)
+        check = Color.ok("[✓]")
+        rp = max(0, self._inner - lp - len(clean) - 4)
+        line = "│" + " " * lp + check + " " + final + " " * rp + "│"
+        empty = "│" + " " * self._inner + "│"
+        sys.stdout.write("\033[3A")
+        sys.stdout.write(f"{self._box_pad}{line}\x1b[K\n")
+        sys.stdout.write(f"{self._box_pad}{empty}\x1b[K\n")
+        sys.stdout.write(f"{self._box_pad}{self._bot}\x1b[K\n")
+        sys.stdout.flush()
+
+    def fail(self, msg=None):
+        if self._closed:
+            return
+        self._closed = True
+        if not self._enabled:
+            return
+        final = msg or "Failed"
+        clean = re.sub(r'\033\[[0-9;]*m', '', final)
+        lp = max(0, (self._inner - len(clean) - 4) // 2)
+        cross = Color.error("[✗]")
+        rp = max(0, self._inner - lp - len(clean) - 4)
+        line = "│" + " " * lp + cross + " " + final + " " * rp + "│"
+        empty = "│" + " " * self._inner + "│"
+        sys.stdout.write("\033[3A")
+        sys.stdout.write(f"{self._box_pad}{line}\x1b[K\n")
+        sys.stdout.write(f"{self._box_pad}{empty}\x1b[K\n")
+        sys.stdout.write(f"{self._box_pad}{self._bot}\x1b[K\n")
+        sys.stdout.flush()

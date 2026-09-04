@@ -202,5 +202,15 @@
   "Installation complete": "Installation terminée",
   "Installation failed": "Échec de l'installation",
   "Update ready!": "Mise à jour prête !",
-  "Applying update and restarting...": "Application de la mise à jour et redémarrage..."
+  "Applying update and restarting...": "Application de la mise à jour et redémarrage...",
+  "Yes": "Oui",
+  "No": "Non",
+  "Do you want to install all missing dependencies?": "Voulez-vous installer toutes les dépendances manquantes ?",
+  "ffmpeg/ffprobe not found. Install dependencies first.": "ffmpeg/ffprobe introuvable. Installez d'abord les dépendances.",
+  "ffmpeg not found. Install dependencies first.": "ffmpeg introuvable. Installez d'abord les dépendances.",
+  "rife-ncnn-vulkan not found. Install dependencies first.": "rife-ncnn-vulkan introuvable. Installez d'abord les dépendances.",
+  "Calculating...": "Calcul en cours...",
+  "Discard & exit": "Annuler et quitter",
+  "Reset settings": "Réinitialiser les paramètres",
+  "Reset all settings to default?": "Réinitialiser tous les paramètres par défaut ?"
 }

@@ -55,7 +55,11 @@ def run_interpolation(
         cmd += ["-t", str(tile_size)]
 
     desc = _("Interpolating")
-    process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
+    try:
+        process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
+    except FileNotFoundError:
+        status(_("rife-ncnn-vulkan not found. Install dependencies first."), "ERROR")
+        return 0
 
     stop_event = threading.Event()
     if progress_cb:

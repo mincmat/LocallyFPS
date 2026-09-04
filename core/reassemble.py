@@ -7,10 +7,10 @@ from pathlib import Path
 
 from . import paths
 from .colors import Color
-from .config import CONFIG
+from . import config
 from .console import status
 from .i18n import _
-from .progress import Spinner
+from .progress import DownloadProgress, PipelineBar, Spinner
 
 _ENCODER_CACHE = None
 
@@ -20,7 +20,8 @@ def _detect_available_encoders():
     if _ENCODER_CACHE is not None:
         return _ENCODER_CACHE
     try:
-        r = subprocess.run([str(paths.FFMPEG_BIN), "-encoders"], capture_output=True, text=True, timeout=5)
+        cmd = [str(paths.FFMPEG_BIN), "-encoders"]
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
         _ENCODER_CACHE = re.findall(r"^\s*V.{5}\s+(\S+)", r.stdout, re.MULTILINE)
         return _ENCODER_CACHE
     except Exception:
@@ -58,7 +59,7 @@ def _pick_best_encoder(preferred="libx264"):
     available = _detect_available_encoders()
     vendors = _detect_gpu_vendors()
 
-    vp = CONFIG.get("video_preset", "")
+    vp = config.CONFIG.get("video_preset", "")
     if vp == "custom" and preferred in available:
         return encoder_presets[preferred]
 
@@ -145,7 +146,11 @@ def reassemble_video(
 
     sp = Spinner(_("Encoding video")) if progress_cb is None else None
     cmd_prog = [str(paths.FFMPEG_BIN), "-y", "-progress", "pipe:1"] + cmd[2:]
-    process = subprocess.Popen(cmd_prog, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1)
+    try:
+        process = subprocess.Popen(cmd_prog, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1)
+    except FileNotFoundError:
+        status(_("ffmpeg not found. Install dependencies first."), "ERROR")
+        return None
     time_re = re.compile(r"time=(\d+):(\d+):(\d+)\.(\d+)")
 
     stderr_buf = []
@@ -220,7 +225,11 @@ def reassemble_video(
             cmd += ["-t", str(video_duration), str(actual_output_path)]
             sp = Spinner(_(f"Trying encoder {fb_name}...")) if progress_cb is None else None
             cmd_prog = [str(paths.FFMPEG_BIN), "-y", "-progress", "pipe:1"] + cmd[2:]
-            process = subprocess.Popen(cmd_prog, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1)
+            try:
+                process = subprocess.Popen(cmd_prog, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1)
+            except FileNotFoundError:
+                status(_("ffmpeg not found. Install dependencies first."), "ERROR")
+                return None
             stderr_buf = []
             stderr_lock = threading.Lock()
             def _read_stderr2():
