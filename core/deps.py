@@ -1,4 +1,5 @@
 import shutil
+import tarfile
 import tempfile
 import urllib.request
 import zipfile
@@ -15,14 +16,14 @@ def download_and_extract(url, dest_dir, description="Downloading", bar=None):
     dest_dir = Path(dest_dir)
     dest_dir.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory() as tmpdir:
-        zip_path = Path(tmpdir) / "archive.zip"
+        archive_path = Path(tmpdir) / "archive"
         if bar:
             def _hook(block_num, block_size, total_size):
                 downloaded = min(block_num * block_size, total_size)
                 pct = downloaded / total_size if total_size > 0 else 0
                 bar.update(pct, downloaded=downloaded, total=total_size)
             try:
-                urllib.request.urlretrieve(url, zip_path, reporthook=_hook)
+                urllib.request.urlretrieve(url, archive_path, reporthook=_hook)
             except KeyboardInterrupt:
                 bar.fail(_("Download cancelled."))
                 return False
@@ -32,7 +33,7 @@ def download_and_extract(url, dest_dir, description="Downloading", bar=None):
         else:
             dl = DownloadProgress(_("Downloading"))
             try:
-                urllib.request.urlretrieve(url, zip_path, reporthook=dl)
+                urllib.request.urlretrieve(url, archive_path, reporthook=dl)
             except KeyboardInterrupt:
                 dl.close()
                 print()
@@ -48,8 +49,19 @@ def download_and_extract(url, dest_dir, description="Downloading", bar=None):
             bar.update(1.0, label=_("Extracting..."))
         else:
             status(_("Extracting..."))
-        with zipfile.ZipFile(zip_path) as zf:
-            zf.extractall(dest_dir)
+        url_lower = url.lower()
+        if url_lower.endswith(".zip"):
+            with zipfile.ZipFile(archive_path) as zf:
+                zf.extractall(dest_dir)
+        elif url_lower.endswith(".tar.xz") or url_lower.endswith(".txz"):
+            with tarfile.open(archive_path, "r:xz") as tf:
+                tf.extractall(dest_dir)
+        elif url_lower.endswith(".tar.gz") or url_lower.endswith(".tgz"):
+            with tarfile.open(archive_path, "r:gz") as tf:
+                tf.extractall(dest_dir)
+        else:
+            with zipfile.ZipFile(archive_path) as zf:
+                zf.extractall(dest_dir)
     return True
 
 
@@ -85,21 +97,30 @@ def ensure_ffmpeg(auto_yes=False, bar=None):
     url = FFMPEG_RELEASE_URLS().get(paths.OS_NAME)
     if url and (auto_yes or ask_yes_no(_("Download ffmpeg now?"), default=True)):
         if download_and_extract(url, paths._FFMPEG_DIR, "ffmpeg", bar=bar):
+            _relocate_ffmpeg_binaries(paths._FFMPEG_DIR)
             return True
         if not auto_yes:
             status(_("Could not download ffmpeg."), "ERROR")
+            if paths.OS_NAME == "macos":
+                hint = _("Install via: brew install ffmpeg")
+            else:
+                hint = _("Download from: https://johnvansickle.com/ffmpeg/")
             status(
                 _("ffmpeg must be placed manually in:") + f"\n  {paths._FFMPEG_DIR}\n"
-                + _("Download from: https://johnvansickle.com/ffmpeg/"),
+                + hint,
                 "ERROR"
             )
             import sys
             sys.exit(1)
         return False
     if not auto_yes:
+        if paths.OS_NAME == "macos":
+            hint = _("Install via: brew install ffmpeg")
+        else:
+            hint = _("Download from: https://johnvansickle.com/ffmpeg/")
         status(
             _("ffmpeg must be placed manually in:") + f"\n  {paths._FFMPEG_DIR}\n"
-            + _("Download from: https://johnvansickle.com/ffmpeg/"),
+            + hint,
             "ERROR"
         )
         import sys
@@ -112,6 +133,20 @@ def _maybe_chmod(path):
         path.chmod(0o755)
     except PermissionError:
         pass
+
+
+def _relocate_ffmpeg_binaries(base_dir):
+    """After extracting ffmpeg archive, move binaries from subdirectories to base_dir."""
+    base_dir = Path(base_dir)
+    for name in ("ffmpeg", "ffprobe"):
+        target = base_dir / f"{name}{paths.BIN_EXT}"
+        if target.is_file():
+            _maybe_chmod(target)
+            continue
+        for f in base_dir.rglob(f"{name}{paths.BIN_EXT}"):
+            shutil.move(str(f), str(target))
+            _maybe_chmod(target)
+            break
 
 
 def ensure_rife(auto_yes=False, bar=None):

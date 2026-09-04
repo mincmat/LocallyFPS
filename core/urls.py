@@ -44,7 +44,7 @@ def get_rife_release_urls():
 
 def get_ffmpeg_release_urls():
     return {
-        "linux": None,
+        "linux": "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz",
         "windows": "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip",
         "macos": None,
     }
