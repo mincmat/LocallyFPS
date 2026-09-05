@@ -37,11 +37,14 @@ Grab the latest release for your OS from [Releases](https://github.com/mincmat/L
 ### Run
 
 ```bash
-# Linux / macOS
+# Linux
 ./start.sh
 
 # Windows
 start.bat
+
+# macOS (double-click in Finder, or run from Terminal)
+./start.command
 ```
 
 That's it. The first run will download ffmpeg and the RIFE model automatically.
