@@ -158,10 +158,13 @@ def run_updater():
 
     version, url, asset_name, checksum_url = result
 
+    available_msg = f"{_('Version')} {version} {_('is available!')}"
+    current_msg = f"{_('Current version:')} v{CURRENT_VERSION}"
+    migration_msg = _("This will download the latest version and migrate your videos.")
     print()
-    print(f"  {Color.accent_bold(f'{_('Version')} {version} {_('is available!')}')}")
-    print(f"  {Color.dim(f'{_('Current version:')} v{CURRENT_VERSION}')}")
-    print(f"  {Color.dim(f'{_('This will download the latest version and migrate your videos.')}')}")
+    print(f"  {Color.accent_bold(available_msg)}")
+    print(f"  {Color.dim(current_msg)}")
+    print(f"  {Color.dim(migration_msg)}")
     print()
 
     if not ask_yes_no(_("Download and install the update?"), default=True):

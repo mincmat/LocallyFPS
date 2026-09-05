@@ -242,7 +242,7 @@ No `pip install` needed — the project uses only Python stdlib.
 ## Testing
 
 ```bash
-python -m unittest discover -v
+python -m unittest discover -s tests -v
 ```
 
 Every push and pull request is tested on Linux, Windows and macOS with GitHub Actions.

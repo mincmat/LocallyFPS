@@ -19,4 +19,4 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
       - run: python -m compileall -q .
-      - run: python -m unittest discover -v
+      - run: python -m unittest discover -s tests -v
