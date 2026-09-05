@@ -22,6 +22,10 @@ from .deps import safe_extract_zip
 CURRENT_VERSION = paths.APP_VERSION
 
 
+class UpdateCheckError(RuntimeError):
+    """Raised when update availability could not be determined reliably."""
+
+
 def check_for_updates():
     try:
         req = urllib.request.Request(
@@ -30,25 +34,33 @@ def check_for_updates():
         )
         with urllib.request.urlopen(req, timeout=15) as resp:
             data = json.loads(resp.read().decode("utf-8"))
-    except Exception:
-        return None
+    except Exception as exc:
+        raise UpdateCheckError(
+            _("Could not connect to GitHub to check for updates.")
+        ) from exc
 
     latest_tag = data.get("tag_name", "")
     if not latest_tag:
-        return None
+        raise UpdateCheckError(_("GitHub returned a release without a version tag."))
 
     current = parse_version(CURRENT_VERSION)
     latest = parse_version(latest_tag)
+    if latest == (0, 0, 0) and latest_tag.lstrip("v").strip() != "0.0.0":
+        raise UpdateCheckError(
+            _("The latest release has an unsupported version format.")
+        )
     if latest <= current:
         return None
 
     base_name = get_platform_base_name()
     if not base_name:
-        return None
+        raise UpdateCheckError(_("Updates are not available for this platform."))
 
     asset = pick_asset(data.get("assets", []), base_name)
     if not asset:
-        return None
+        raise UpdateCheckError(
+            _("The latest release has no download for this platform.")
+        )
 
     checksum_asset = next(
         (a for a in data.get("assets", []) if a.get("name") == "SHA256SUMS.txt"), None
@@ -138,7 +150,12 @@ def _prepare_update(zip_path):
 
 
 def run_updater():
-    result = check_for_updates()
+    try:
+        result = check_for_updates()
+    except UpdateCheckError as exc:
+        status(str(exc), "ERROR")
+        input(f"\n  {Color.dim(_('Press Enter to continue...'))}")
+        return
     if result is None:
         term = shutil.get_terminal_size()
         msg_ok = Color.ok(_('You are running the latest version.'))

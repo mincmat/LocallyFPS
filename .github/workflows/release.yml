@@ -39,5 +39,5 @@ jobs:
           gh release create "$RELEASE_TAG" dist/*.zip dist/SHA256SUMS.txt \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
-            --title "LocallyFPS ${RELEASE_TAG}" \
-            --notes-file <(awk '/^## 3.1 /{flag=1;next}/^## /{flag=0}flag' CHANGELOG.md)
+            --title "$RELEASE_TAG" \
+            --notes-file <(awk '/^## /{if(found) exit; found=1; next} found' CHANGELOG.md)

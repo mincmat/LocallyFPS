@@ -15,6 +15,7 @@ from core.extract import _get_pix_fmt_filter, extract_frames
 from core.probe import probe_video_file
 from core.reassemble import _build_encode_command, _encoder_args, _validate_output
 from core.update_utils import parse_version
+from core.updater import UpdateCheckError, check_for_updates
 
 
 class EncoderTests(unittest.TestCase):
@@ -41,6 +42,33 @@ class EncoderTests(unittest.TestCase):
     def test_short_release_version_is_semver_compatible(self):
         self.assertEqual(parse_version("v3.1"), (3, 1, 0))
         self.assertEqual(parse_version("3.1.2"), (3, 1, 2))
+
+
+class UpdateCheckTests(unittest.TestCase):
+    @mock.patch("core.updater.urllib.request.urlopen", side_effect=OSError("offline"))
+    def test_network_failure_is_not_reported_as_latest_version(self, _urlopen):
+        with self.assertRaises(UpdateCheckError):
+            check_for_updates()
+
+    @mock.patch("core.updater.get_platform_base_name", return_value="LocallyFPS_Linux")
+    @mock.patch("core.updater.CURRENT_VERSION", "3.1")
+    @mock.patch("core.updater.urllib.request.urlopen")
+    def test_short_current_version_detects_new_release(self, urlopen, _base_name):
+        payload = {
+            "tag_name": "v3.2.0",
+            "assets": [{
+                "name": "LocallyFPS_Linux_v3.2.zip",
+                "browser_download_url": "https://example.invalid/LocallyFPS_Linux_v3.2.zip",
+            }],
+        }
+        response = mock.MagicMock()
+        response.__enter__.return_value.read.return_value = json.dumps(payload).encode()
+        urlopen.return_value = response
+
+        result = check_for_updates()
+
+        self.assertEqual(result[0], "v3.2.0")
+        self.assertEqual(result[2], "LocallyFPS_Linux_v3.2.zip")
 
 
 class ExtractionTests(unittest.TestCase):
