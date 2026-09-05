@@ -1,4 +1,6 @@
+import os
 import shutil
+import stat
 import tarfile
 import tempfile
 import time
@@ -14,6 +16,33 @@ from .urls import RIFE_RELEASE_URLS, FFMPEG_RELEASE_URLS
 
 RETRY_COUNT = 3
 RETRY_DELAY = 2
+
+
+def _safe_archive_path(dest_dir, member_name):
+    dest_dir = Path(dest_dir).resolve()
+    target = (dest_dir / member_name).resolve()
+    try:
+        return os.path.commonpath((str(dest_dir), str(target))) == str(dest_dir)
+    except ValueError:
+        return False
+
+
+def safe_extract_zip(zf, dest_dir):
+    """Extract a ZIP after rejecting traversal and symbolic-link entries."""
+    for info in zf.infolist():
+        mode = info.external_attr >> 16
+        if not _safe_archive_path(dest_dir, info.filename) or stat.S_ISLNK(mode):
+            raise ValueError(f"Unsafe path in ZIP archive: {info.filename}")
+    zf.extractall(dest_dir)
+
+
+def safe_extract_tar(tf, dest_dir):
+    """Extract a tar archive after rejecting links, devices and traversal."""
+    for member in tf.getmembers():
+        if (not _safe_archive_path(dest_dir, member.name) or member.issym()
+                or member.islnk() or member.isdev()):
+            raise ValueError(f"Unsafe path in tar archive: {member.name}")
+    tf.extractall(dest_dir)
 
 
 def sha256_file(path):
@@ -76,16 +105,16 @@ def download_and_extract(url, dest_dir, description="Downloading", bar=None):
             try:
                 if url_lower.endswith(".zip"):
                     with zipfile.ZipFile(archive_path) as zf:
-                        zf.extractall(dest_dir)
+                        safe_extract_zip(zf, dest_dir)
                 elif url_lower.endswith(".tar.xz") or url_lower.endswith(".txz"):
                     with tarfile.open(archive_path, "r:xz") as tf:
-                        tf.extractall(dest_dir)
+                        safe_extract_tar(tf, dest_dir)
                 elif url_lower.endswith(".tar.gz") or url_lower.endswith(".tgz"):
                     with tarfile.open(archive_path, "r:gz") as tf:
-                        tf.extractall(dest_dir)
+                        safe_extract_tar(tf, dest_dir)
                 else:
                     with zipfile.ZipFile(archive_path) as zf:
-                        zf.extractall(dest_dir)
+                        safe_extract_zip(zf, dest_dir)
             except Exception as exc:
                 last_err = exc
                 if attempt < RETRY_COUNT - 1:

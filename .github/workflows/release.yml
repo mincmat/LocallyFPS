@@ -1,0 +1,43 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+    branches: ["release-v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: resolve release tag
+        run: echo "RELEASE_TAG=${GITHUB_REF_NAME#release-}" >> "$GITHUB_ENV"
+      - name: test
+        run: |
+          python -m compileall -q .
+          python -m unittest discover -v
+      - name: package
+        run: |
+          mkdir -p dist/stage
+          rsync -a ./ dist/stage/ \
+            --exclude .git --exclude .github --exclude dist \
+            --exclude tests --exclude __pycache__ --exclude '*.pyc'
+          chmod +x dist/stage/start.sh dist/stage/start.command
+          for platform in Linux Windows macOS; do
+            cp -a dist/stage "dist/LocallyFPS_${platform}_${RELEASE_TAG}"
+            (cd dist && zip -qr "LocallyFPS_${platform}_${RELEASE_TAG}.zip" "LocallyFPS_${platform}_${RELEASE_TAG}")
+            rm -rf "dist/LocallyFPS_${platform}_${RELEASE_TAG}"
+          done
+          (cd dist && sha256sum *.zip > SHA256SUMS.txt)
+      - name: publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$RELEASE_TAG" dist/*.zip dist/SHA256SUMS.txt \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "LocallyFPS ${RELEASE_TAG}" \
+            --notes-file <(awk '/^## 3.1 /{flag=1;next}/^## /{flag=0}flag' CHANGELOG.md)

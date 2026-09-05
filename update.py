@@ -6,6 +6,7 @@ Usage: python3 update.py
 """
 
 import json
+import hashlib
 import os
 import shutil
 import sys
@@ -21,6 +22,7 @@ from core.update_utils import (
     GITHUB_API, ASSET_MAP, parse_version, get_platform_name,
     pick_asset, create_swap_script, launch_swap, human_size,
 )
+from core.deps import safe_extract_zip
 
 REPO = "mincmat/LocallyFPS"
 
@@ -59,11 +61,38 @@ def check_latest():
         _print(f"Error: no asset matching '{base_name}(_vX.Y.Z)?.zip' in release {tag}")
         return None
 
+    checksum_asset = next(
+        (a for a in data.get("assets", []) if a.get("name") == "SHA256SUMS.txt"), None
+    )
     return {
         "tag_name": tag,
         "download_url": asset["browser_download_url"],
+        "asset_name": asset["name"],
+        "checksum_url": checksum_asset["browser_download_url"] if checksum_asset else None,
         "size": asset["size"],
     }
+
+
+def _verify_checksum(zip_path, asset_name, checksum_url):
+    if not checksum_url:
+        _print("Error: release has no SHA256SUMS.txt; refusing unverified update")
+        return False
+    try:
+        req = Request(checksum_url, headers={"User-Agent": "LocallyFPS-Updater"})
+        with urlopen(req, timeout=15) as resp:
+            lines = resp.read().decode("utf-8").splitlines()
+        expected = next(
+            line.split()[0] for line in lines
+            if len(line.split()) >= 2 and line.split()[-1].lstrip("*") == asset_name
+        )
+    except Exception as exc:
+        _print(f"Error verifying checksum: {exc}")
+        return False
+    actual = hashlib.sha256(zip_path.read_bytes()).hexdigest()
+    if actual.lower() != expected.lower():
+        _print("Error: update checksum mismatch")
+        return False
+    return True
 
 
 def update(info):
@@ -97,6 +126,10 @@ def update(info):
         shutil.rmtree(temp_dir, ignore_errors=True)
         return False
 
+    if not _verify_checksum(zip_path, info["asset_name"], info["checksum_url"]):
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        return False
+
     _print(f"Extracting {tag}...")
     extract_dir = base.parent / f".{base.name}_update"
 
@@ -106,7 +139,7 @@ def update(info):
 
     try:
         with zipfile.ZipFile(zip_path, "r") as zf:
-            zf.extractall(extract_dir)
+            safe_extract_zip(zf, extract_dir)
     except Exception as e:
         _print(f"Error extracting: {e}")
         shutil.rmtree(temp_dir, ignore_errors=True)

@@ -5,7 +5,7 @@ from pathlib import Path
 
 from . import paths
 from .console import status
-from .deps import download_and_extract, sha256_file
+from .deps import safe_extract_zip
 from .i18n import _
 from .progress import DownloadProgress
 from .urls import RIFE_RELEASE_URLS
@@ -60,7 +60,7 @@ def _ensure_rife_release_cached():
     extract_dir.mkdir(parents=True, exist_ok=True)
     try:
         with zipfile.ZipFile(cache_zip) as zf:
-            zf.extractall(extract_dir)
+            safe_extract_zip(zf, extract_dir)
     except Exception as exc:
         status(f"{_('Extraction failed:')} {exc}", "ERROR")
         shutil.rmtree(extract_dir, ignore_errors=True)

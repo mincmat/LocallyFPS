@@ -24,7 +24,7 @@ LocallyFPS uses the **RIFE** (Real-Time Intermediate Flow Estimation) AI model t
 - **CLI mode** for scripting and batch processing
 - **Zero dependencies to install manually** — ffmpeg and RIFE are auto-downloaded on first run
 - **Encoder fallback chain** — if your preferred encoder fails, it tries alternatives automatically
-- **SHA-256 verification** for downloaded dependencies
+- **SHA-256 verification** for application updates and local dependency integrity
 
 ---
 
@@ -81,12 +81,12 @@ Input video (H.264, H.265, etc.)
 ┌──────────────┐    ┌──────────────┐    ┌──────────────┐
 │    ffmpeg    │───▶│  RIFE (AI)   │───▶│    ffmpeg    │
 │   extract    │    │ interpolate  │    │   encode     │
-│ JPEG frames  │    │  new frames  │    │  + audio     │
+│  PNG frames  │    │  new frames  │    │  + audio     │
 └──────────────┘    └──────────────┘    └──────────────┘
-  .jpg frames         .png frames       .mp4 / .mkv
+  .png frames         .png frames       .mp4 / .mkv
 ```
 
-1. **Extract** — ffmpeg pulls every frame as JPEG (with automatic pixel format conversion for H.265/HEVC)
+1. **Extract** — ffmpeg pulls every frame as lossless PNG (with automatic pixel format conversion for H.265/HEVC)
 2. **Interpolate** — RIFE generates new frames between existing ones using AI
 3. **Reassemble** — ffmpeg encodes the result back into a video with audio and color metadata
 
@@ -98,7 +98,7 @@ Input video (H.264, H.265, etc.)
 |-----------|---------|
 | **GPU** | Any Vulkan-capable GPU (NVIDIA, AMD, Intel) or CPU fallback for integrated GPUs |
 | **Vulkan driver** | NVIDIA proprietary recommended. Open-source drivers work too. |
-| **Python** | 3.8+ (only stdlib + optional `tqdm`) |
+| **Python** | 3.10+ (only stdlib + optional `tqdm`) |
 | **Disk space** | Varies — the app estimates and warns before processing |
 | **ffmpeg** | Auto-downloaded if not found on your system |
 
@@ -195,7 +195,7 @@ LocallyFPS/
 | AVI, MKV, MOV, and more | MP4, MKV |
 
 H.265/HEVC input is fully supported with automatic:
-- Pixel format conversion (10-bit to 8-bit for JPEG extraction)
+- Pixel format conversion (10-bit video to 8-bit RGB for RIFE-compatible PNG extraction)
 - HDR to SDR tone mapping (PQ/HLG transfer functions)
 - Color metadata preservation in the output
 
@@ -238,6 +238,14 @@ python fps_enhancer.py
 ```
 
 No `pip install` needed — the project uses only Python stdlib.
+
+## Testing
+
+```bash
+python -m unittest discover -v
+```
+
+Every push and pull request is tested on Linux, Windows and macOS with GitHub Actions.
 
 ---
 

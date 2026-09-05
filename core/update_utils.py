@@ -15,9 +15,10 @@ ASSET_MAP = {
 
 def parse_version(tag):
     tag = tag.lstrip("v").strip()
-    m = re.match(r"(\d+)\.(\d+)\.(\d+)", tag)
+    m = re.fullmatch(r"(\d+)\.(\d+)(?:\.(\d+))?", tag)
     if m:
-        return tuple(map(int, m.groups()))
+        major, minor, patch = m.groups()
+        return int(major), int(minor), int(patch or 0)
     return (0, 0, 0)
 
 

@@ -1,4 +1,5 @@
 import json
+import hashlib
 import re
 import shutil
 import subprocess
@@ -16,6 +17,7 @@ from .update_utils import (
     GITHUB_API, parse_version, get_platform_base_name,
     pick_asset, create_swap_script, launch_swap, human_size,
 )
+from .deps import safe_extract_zip
 
 CURRENT_VERSION = paths.APP_VERSION
 
@@ -48,7 +50,13 @@ def check_for_updates():
     if not asset:
         return None
 
-    return (latest_tag, asset.get("browser_download_url"))
+    checksum_asset = next(
+        (a for a in data.get("assets", []) if a.get("name") == "SHA256SUMS.txt"), None
+    )
+    return (
+        latest_tag, asset.get("browser_download_url"), asset.get("name"),
+        checksum_asset.get("browser_download_url") if checksum_asset else None,
+    )
 
 
 def _download_with_progress(url, dest, progress_cb=None):
@@ -65,6 +73,28 @@ def _download_with_progress(url, dest, progress_cb=None):
         raise
 
 
+def _verify_release_checksum(zip_path, asset_name, checksum_url):
+    if not checksum_url:
+        status(_("Release has no checksum file; update cancelled."), "ERROR")
+        return False
+    try:
+        req = urllib.request.Request(checksum_url, headers={"User-Agent": "LocallyFPS-Updater"})
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            lines = resp.read().decode("utf-8").splitlines()
+        expected = next(
+            line.split()[0] for line in lines
+            if len(line.split()) >= 2 and line.split()[-1].lstrip("*") == asset_name
+        )
+    except Exception:
+        status(_("Could not verify the update checksum."), "ERROR")
+        return False
+    digest = hashlib.sha256(Path(zip_path).read_bytes()).hexdigest()
+    if digest.lower() != expected.lower():
+        status(_("Update checksum mismatch; update cancelled."), "ERROR")
+        return False
+    return True
+
+
 def _prepare_update(zip_path):
     current_dir = paths.BASE_DIR
     parent = current_dir.parent
@@ -77,7 +107,7 @@ def _prepare_update(zip_path):
         shutil.rmtree(update_dir)
     update_dir.mkdir(parents=True)
 
-    zip_file.extractall(update_dir)
+    safe_extract_zip(zip_file, update_dir)
     zip_file.close()
 
     if zip_top and zip_top != ".":
@@ -126,7 +156,7 @@ def run_updater():
         input(f"{' ' * pad_enter}{msg_enter}")
         return
 
-    version, url = result
+    version, url, asset_name, checksum_url = result
 
     print()
     print(f"  {Color.accent_bold(f'{_('Version')} {version} {_('is available!')}')}")
@@ -152,6 +182,11 @@ def run_updater():
         input(f"\n  {Color.dim(_('Press Enter to continue...'))}")
         return
     sp.ok(_("Download complete"), show_time=False)
+
+    if not _verify_release_checksum(tmp, asset_name, checksum_url):
+        tmp.unlink(missing_ok=True)
+        input(f"\n  {Color.dim(_('Press Enter to continue...'))}")
+        return
 
     sp = Spinner(_("Installing update..."))
     try:

@@ -33,12 +33,6 @@ def _count_frames_real(video_path):
         return int(result.stdout.strip())
     except (ValueError, TypeError):
         return 0
-    try:
-        return int(result.stdout.strip())
-    except (ValueError, TypeError):
-        return 0
-
-
 def probe_video_file(path):
     if not path.is_file():
         return None
@@ -58,24 +52,21 @@ def probe_video_file(path):
     if result.returncode != 0:
         return None
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True)
-    except FileNotFoundError:
-        status(_("ffmpeg/ffprobe not found. Install dependencies first."), "ERROR")
-        return None
-    if result.returncode != 0:
-        return None
-
-    try:
         data = json.loads(result.stdout)
         streams = data.get("streams") or []
         if not streams:
             return None
-        stream = streams[0]
+        video_streams = [s for s in streams if s.get("codec_type") == "video"]
+        if not video_streams:
+            return None
+        stream = video_streams[0]
         fmt = data.get("format", {})
 
-        fps = _parse_fps(stream.get("r_frame_rate", ""))
+        # avg_frame_rate reflects presentation rate; r_frame_rate may only be
+        # the codec time base and is often misleading for VFR sources.
+        fps = _parse_fps(stream.get("avg_frame_rate", ""))
         if fps <= 0:
-            fps = _parse_fps(stream.get("avg_frame_rate", ""))
+            fps = _parse_fps(stream.get("r_frame_rate", ""))
         if fps <= 0:
             fps = 30.0
             status(_("Detected FPS as 0 (VFR or unusual format). Assuming 30 fps."), "WARN")
@@ -99,16 +90,11 @@ def probe_video_file(path):
             if frame_count > 0:
                 fps = frame_count / duration if duration > 0 else fps
 
-        audio_cmd = [
-            str(paths.FFPROBE_BIN), "-v", "error", "-select_streams", "a",
-            "-show_entries", "stream=index", "-of", "csv=p=0", str(path),
+        audio_streams = [s for s in streams if s.get("codec_type") == "audio"]
+        subtitle_streams = [
+            {"index": int(s["index"]), "codec": s.get("codec_name", "unknown")}
+            for s in streams if s.get("codec_type") == "subtitle" and "index" in s
         ]
-        try:
-            audio_result = subprocess.run(audio_cmd, capture_output=True, text=True)
-        except FileNotFoundError:
-            audio_tracks = []
-        else:
-            audio_tracks = [t for t in audio_result.stdout.strip().split("\n") if t.strip()]
 
         return {
             "path": path,
@@ -121,8 +107,9 @@ def probe_video_file(path):
             "frame_count": frame_count,
             "duration": duration,
             "size_bytes": int(fmt.get("size", 0) or 0),
-            "has_audio": len(audio_tracks) > 0,
-            "audio_tracks": len(audio_tracks),
+            "has_audio": len(audio_streams) > 0,
+            "audio_tracks": len(audio_streams),
+            "subtitle_streams": subtitle_streams,
             "pix_fmt": stream.get("pix_fmt", "unknown"),
             "color_space": stream.get("color_space"),
             "color_transfer": stream.get("color_transfer"),

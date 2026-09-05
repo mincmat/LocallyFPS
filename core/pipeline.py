@@ -103,6 +103,9 @@ def run_pipeline(info, target_fps, output_path, gpu_settings, model=None, intera
     if pbar:
         pbar.close()
     tmp.cleanup()
+    if final_output_path is None:
+        status(_("Video export failed."), "ERROR")
+        return False
     from .utils import format_duration
     elapsed = time.time() - start_time
     if pbar:

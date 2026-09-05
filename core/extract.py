@@ -25,7 +25,7 @@ def count_files(directory, pattern="*"):
     return count
 
 
-def _watch_progress_proc(output_dir, target_frames, stop_event, pbar, file_pattern="*.jpg"):
+def _watch_progress_proc(output_dir, target_frames, stop_event, pbar, file_pattern="*.png"):
     last_count = 0
     while not stop_event.is_set():
         current = count_files(output_dir, file_pattern)
@@ -39,7 +39,7 @@ def _watch_progress_proc(output_dir, target_frames, stop_event, pbar, file_patte
         pbar.update(current - last_count)
 
 
-def _watch_progress_cb(output_dir, target_frames, stop_event, cb, file_pattern="*.jpg"):
+def _watch_progress_cb(output_dir, target_frames, stop_event, cb, file_pattern="*.png"):
     last_count = 0
     while not stop_event.is_set():
         current = count_files(output_dir, file_pattern)
@@ -83,14 +83,13 @@ def _get_fps_mode_args():
 
 
 def _get_pix_fmt_filter(info):
-    """Return a -vf filter string to normalize pixel format for JPEG extraction.
+    """Return a filter that produces lossless, RIFE-compatible RGB PNG frames.
 
-    HEVC Main 10 uses yuv420p10le which cannot be directly encoded to JPEG
-    without quality loss or corruption. This forces conversion to yuv420p.
-    For HDR content (smpte2084, arib-std-b67), adds tone mapping to SDR.
+    RIFE's ncnn build consumes 8-bit images. HDR10/HLG is tone-mapped to SDR
+    before that conversion; SDR sources only need conversion to RGB24.
     """
     if not info:
-        return "format=yuv420p"
+        return "format=rgb24"
 
     color_transfer = info.get("color_transfer", "")
     is_hdr = color_transfer in ("smpte2084", "arib-std-b67")
@@ -98,10 +97,10 @@ def _get_pix_fmt_filter(info):
     if is_hdr:
         return (
             "zscale=t=linear:npl=100,format=gbrpf32le,"
-            "zscale=p=bt709:tonemap=hable,"
-            "zscale=t=bt709:range=pc,format=yuv420p"
+            "tonemap=tonemap=hable:desat=0,"
+            "zscale=p=bt709:t=bt709:m=bt709:r=tv,format=rgb24"
         )
-    return "format=yuv420p"
+    return "format=rgb24"
 
 
 def extract_frames(video_path, frames_dir, info=None, gpu_settings=None, progress_cb=None):
@@ -128,23 +127,23 @@ def extract_frames(video_path, frames_dir, info=None, gpu_settings=None, progres
     ]
     if pix_fmt_filter:
         cmd += ["-vf", pix_fmt_filter]
-    cmd += ["-q:v", "1", str(frames_dir / "%08d.jpg")]
+    cmd += ["-compression_level", "1", str(frames_dir / "%08d.png")]
     stop_event = threading.Event()
     if progress_cb:
         watcher = threading.Thread(
-            target=_watch_progress_cb, args=(frames_dir, total_est, stop_event, progress_cb, "*.jpg"), daemon=True
+            target=_watch_progress_cb, args=(frames_dir, total_est, stop_event, progress_cb, "*.png"), daemon=True
         )
         watcher.start()
     elif HAS_TQDM:
         pbar = tqdm(total=total_est, desc=_("Extracting frames"), unit="frame", bar_format="{l_bar}{bar:30}{r_bar}")
         watcher = threading.Thread(
-            target=_watch_progress_proc, args=(frames_dir, total_est, stop_event, pbar, "*.jpg"), daemon=True
+            target=_watch_progress_proc, args=(frames_dir, total_est, stop_event, pbar, "*.png"), daemon=True
         )
         watcher.start()
     else:
         pbar = ProgressBar(total=total_est, desc=_("Extracting frames"), unit="frame", width=35)
         watcher = threading.Thread(
-            target=_watch_progress_proc, args=(frames_dir, total_est, stop_event, pbar, "*.jpg"), daemon=True
+            target=_watch_progress_proc, args=(frames_dir, total_est, stop_event, pbar, "*.png"), daemon=True
         )
         watcher.start()
 
@@ -173,7 +172,7 @@ def extract_frames(video_path, frames_dir, info=None, gpu_settings=None, progres
             ]
             if pix_fmt_filter:
                 cmd_fallback += ["-vf", pix_fmt_filter]
-            cmd_fallback += ["-q:v", "1", str(frames_dir / "%08d.jpg")]
+            cmd_fallback += ["-compression_level", "1", str(frames_dir / "%08d.png")]
             result = subprocess.run(cmd_fallback, capture_output=True, text=True)
 
     stop_event.set()
@@ -186,7 +185,7 @@ def extract_frames(video_path, frames_dir, info=None, gpu_settings=None, progres
         import sys
         sys.exit(1)
 
-    extracted = count_files(frames_dir, "*.jpg")
+    extracted = count_files(frames_dir, "*.png")
     if extracted == 0:
         status(_("No frames extracted. Aborting."), "ERROR")
         import sys
