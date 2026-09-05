@@ -13,13 +13,18 @@ LocallyFPS uses the **RIFE** (Real-Time Intermediate Flow Estimation) AI model t
 ## Features
 
 - **AI frame interpolation** using RIFE v4.6 via ncnn + Vulkan
+- **H.265/HEVC input support** with automatic pixel format conversion
+- **HDR tone mapping** — HDR10/HLG content is tone-mapped to SDR during extraction
+- **Color metadata preservation** — color space, range, and primaries are carried through to the output
 - **Hardware-accelerated encoding** — NVENC, VAAPI, QSV, VideoToolbox with automatic fallback
+- **Smart GPU/CPU selection** — integrated GPUs automatically use CPU for 2K+ resolutions
 - **Cross-platform** — Linux, Windows, macOS
 - **10 languages** — English, Español, Deutsch, Français, Português, Русский, العربية, 中文, 日本語, 한국어
-- **Interactive TUI** with raw keyboard input on Linux
+- **Interactive TUI** with raw keyboard input on Linux/macOS
 - **CLI mode** for scripting and batch processing
 - **Zero dependencies to install manually** — ffmpeg and RIFE are auto-downloaded on first run
 - **Encoder fallback chain** — if your preferred encoder fails, it tries alternatives automatically
+- **SHA-256 verification** for downloaded dependencies
 
 ---
 
@@ -67,20 +72,20 @@ Run `python fps_enhancer.py --help` for all options.
 ## How It Works
 
 ```
-Input video
-    │
-    ▼
-┌──────────┐    ──────────────┐    ┌───────────┐    ┌────────────
-│  ffmpeg  │───▶│  RIFE (AI)   │───▶│  ffmpeg   │───▶│  Output    │
-│ extract  │    │ interpolate  │    │  encode   │    │  video     │
-│  frames  │    │   frames     │    │  + audio  │    │            │
-└──────────┘    ──────────────┘    └───────────┘    └────────────┘
-  .jpg frames      .png frames       .mp4 / .mkv
+Input video (H.264, H.265, etc.)
+        │
+        ▼
+┌──────────────┐    ┌──────────────┐    ┌──────────────┐
+│    ffmpeg    │───▶│  RIFE (AI)   │───▶│    ffmpeg    │
+│   extract    │    │ interpolate  │    │   encode     │
+│ JPEG frames  │    │  new frames  │    │  + audio     │
+└──────────────┘    └──────────────┘    └──────────────┘
+  .jpg frames         .png frames       .mp4 / .mkv
 ```
 
-1. **Extract** — ffmpeg pulls every frame as JPEG
+1. **Extract** — ffmpeg pulls every frame as JPEG (with automatic pixel format conversion for H.265/HEVC)
 2. **Interpolate** — RIFE generates new frames between existing ones using AI
-3. **Reassemble** — ffmpeg encodes the result back into a video with audio
+3. **Reassemble** — ffmpeg encodes the result back into a video with audio and color metadata
 
 ---
 
@@ -88,7 +93,7 @@ Input video
 
 | Component | Details |
 |-----------|---------|
-| **GPU** | Any Vulkan-capable GPU (NVIDIA, AMD, Intel) |
+| **GPU** | Any Vulkan-capable GPU (NVIDIA, AMD, Intel) or CPU fallback for integrated GPUs |
 | **Vulkan driver** | NVIDIA proprietary recommended. Open-source drivers work too. |
 | **Python** | 3.8+ (only stdlib + optional `tqdm`) |
 | **Disk space** | Varies — the app estimates and warns before processing |
@@ -103,6 +108,18 @@ Input video
 | Intel | QSV / VAAPI | Works well for integrated GPUs |
 | Apple | VideoToolbox (macOS) | Optimized for M-series chips |
 
+### CPU/GPU Selection
+
+LocallyFPS automatically selects between GPU and CPU based on your hardware:
+
+| GPU Type | Resolution | Mode |
+|----------|-----------|------|
+| Dedicated (RTX, GTX, RX) | Any | GPU |
+| Integrated (Intel, AMD) | < 1440p | GPU |
+| Integrated (Intel, AMD) | ≥ 1440p | CPU |
+
+Integrated GPUs use CPU for high resolutions because they share system RAM and lack the VRAM needed for large frame buffers.
+
 ---
 
 ## Configuration
@@ -116,20 +133,18 @@ Settings are stored in `config/settings.json`:
   "crf": 16,
   "preset": "fast",
   "model": "rife-v4.6",
-  "video_preset": "custom",
-  "rife_threads": "2:6:6"
+  "video_preset": "custom"
 }
 ```
 
 You can change these from the **Settings** menu or edit the file directly.
 
-### Key settings
+### Key Settings
 
 - **encoder** — Video encoder. `libx264` for CPU, `h264_nvenc` for NVIDIA GPU, etc.
 - **crf** — Quality (lower = better, 0 = lossless). 16-23 is a good range.
 - **preset** — Encoding speed vs. quality tradeoff.
 - **model** — RIFE model version. `rife-v4.6` is the default and recommended.
-- **rife_threads** — Thread allocation for RIFE (load:process:save).
 
 ---
 
@@ -137,27 +152,49 @@ You can change these from the **Settings** menu or edit the file directly.
 
 ```
 LocallyFPS/
-├── fps_enhancer.py      # Entry point
-├── start.sh / start.bat # Launchers
-├── core/                # Application logic
-│   ├── pipeline.py      # Orchestrates extract → interpolate → encode
-│   ├── progress.py      # Progress bars and spinners
-│   ├── wizard.py        # Interactive TUI
-│   ├── extract.py       # ffmpeg frame extraction
-│   ├── interpolate.py   # RIFE wrapper
-│   ├── reassemble.py    # ffmpeg encoding with fallback
+├── fps_enhancer.py        # Entry point
+├── update.py              # Standalone updater
+├── start.sh / start.bat   # Launchers
+├── core/                  # Application logic
+│   ├── pipeline.py        # Orchestrates extract -> interpolate -> encode
+│   ├── extract.py         # ffmpeg frame extraction (H.265/HDR support)
+│   ├── interpolate.py     # RIFE wrapper (GPU/CPU selection)
+│   ├── reassemble.py      # ffmpeg encoding with fallback + color metadata
+│   ├── probe.py           # Video metadata extraction
+│   ├── manifest.py        # SHA-256 dependency verification
+│   ├── progress.py        # Progress bars and spinners
+│   ├── wizard.py          # Interactive TUI
+│   ├── deps.py            # Dependency download and install
+│   ├── models.py          # RIFE model management
 │   └── ...
-├── platform/            # OS-specific code
-│   ├── linux/
-│   ├── windows/
-│   └── macos/
-├── languages/           # Translation files
-├── models/              # RIFE AI models
-├── deps/                # ffmpeg and RIFE binaries
+├── platform/              # OS-specific code
+│   ├── linux/             # lspci, vulkaninfo, termios
+│   ├── windows/           # PowerShell, NVENC/QSV
+│   └── macos/             # system_profiler, VideoToolbox
+├── languages/             # Translation files (10 languages)
+├── models/                # RIFE AI models
+├── deps/                  # ffmpeg and RIFE binaries
 └── videos/
-    ├── original/        # Drop your videos here
-    └── enhanced/        # Output goes here
+    ├── original/          # Drop your videos here
+    └── enhanced/          # Output goes here
 ```
+
+---
+
+## Supported Formats
+
+| Input | Output |
+|-------|--------|
+| H.264 (AVC) | H.264 (AVC) |
+| H.265 (HEVC) | H.265 (HEVC) |
+| VP8/VP9 | H.264/H.265 |
+| MPEG-4 | H.264/H.265 |
+| AVI, MKV, MOV, and more | MP4, MKV |
+
+H.265/HEVC input is fully supported with automatic:
+- Pixel format conversion (10-bit to 8-bit for JPEG extraction)
+- HDR to SDR tone mapping (PQ/HLG transfer functions)
+- Color metadata preservation in the output
 
 ---
 
@@ -173,12 +210,19 @@ Install or update your GPU's Vulkan driver. On Linux: `vulkaninfo` should list y
 - Use a hardware encoder (NVENC/VAAPI/QSV) instead of libx264
 - Lower the target FPS
 - Reduce resolution
+- If you have an integrated GPU, LocallyFPS will automatically use CPU for 2K+ resolutions
 
 **Out of disk space?**
-The app estimates required space before starting. Extraction needs roughly `width × height × 3 × frames × 0.4` bytes.
+The app estimates required space before starting. Extraction needs roughly `width x height x 3 x frames x 0.4` bytes.
 
 **Model download fails?**
 The RIFE model (~400MB) is downloaded from GitHub Releases. Check your internet connection or download it manually and place it in `models/rife-v4.6/`.
+
+**H.265/HEVC video looks wrong?**
+LocallyFPS automatically handles H.265 pixel format conversion. If you still see issues, try re-encoding the input to H.264 first with `ffmpeg -i input.mp4 -c:v libx264 -crf 18 output.mp4`.
+
+**Colors look washed out or oversaturated?**
+This can happen with HDR content. LocallyFPS performs automatic HDR tone mapping, but if the result looks wrong, try a different encoder or CRF value.
 
 ---
 
