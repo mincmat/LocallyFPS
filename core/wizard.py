@@ -418,9 +418,10 @@ def main_cli(args):
         status(f"{_('The input file does not exist:')} {input_path}", "ERROR")
         sys.exit(1)
 
-    ensure_ffmpeg()
-    ensure_rife()
-    ensure_default_model()
+    auto = args.yes or not sys.stdout.isatty()
+    ensure_ffmpeg(auto_yes=auto)
+    ensure_rife(auto_yes=auto)
+    ensure_default_model(auto_yes=auto)
     info = probe_video_file(input_path)
     if info is None:
         status(_("Not a processable video file."), "ERROR")

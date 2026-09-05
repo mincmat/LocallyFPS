@@ -1,5 +1,4 @@
 import json
-import os
 import re
 import shutil
 import subprocess
@@ -13,49 +12,12 @@ from . import paths
 from .colors import Color
 from .console import status, ask_yes_no
 from .i18n import _
+from .update_utils import (
+    GITHUB_API, parse_version, get_platform_base_name,
+    pick_asset, create_swap_script, launch_swap, human_size,
+)
 
-GITHUB_API = "https://api.github.com/repos/mincmat/LocallyFPS/releases"
 CURRENT_VERSION = paths.APP_VERSION
-
-
-def _parse_version(tag):
-    tag = tag.lstrip("v").strip()
-    import re
-    m = re.match(r"(\d+)\.(\d+)\.(\d+)", tag)
-    if m:
-        return tuple(map(int, m.groups()))
-    return (0, 0, 0)
-
-
-def _get_platform_base_name():
-    if sys.platform.startswith("linux"):
-        return "LocallyFPS_Linux"
-    elif sys.platform == "darwin":
-        return "LocallyFPS_macOS"
-    elif sys.platform == "win32":
-        return "LocallyFPS_Windows"
-    return None
-
-
-def _pick_asset(assets, base_name):
-    """Match 'LocallyFPS_<Platform>.zip' or 'LocallyFPS_<Platform>_vX.Y.Z.zip'."""
-    pattern = re.compile(
-        r"^" + re.escape(base_name) + r"(_v\d+(?:\.\d+)*)?\.zip$", re.IGNORECASE
-    )
-    matches = [a for a in assets if pattern.match(a.get("name", ""))]
-    if not matches:
-        return None
-
-    def version_key(asset):
-        m = re.search(r"_v(\d+(?:\.\d+)*)\.zip$", asset.get("name", ""), re.IGNORECASE)
-        if m:
-            try:
-                return tuple(int(x) for x in m.group(1).split("."))
-            except ValueError:
-                pass
-        return ()
-
-    return max(matches, key=version_key)
 
 
 def check_for_updates():
@@ -73,16 +35,16 @@ def check_for_updates():
     if not latest_tag:
         return None
 
-    current = _parse_version(CURRENT_VERSION)
-    latest = _parse_version(latest_tag)
+    current = parse_version(CURRENT_VERSION)
+    latest = parse_version(latest_tag)
     if latest <= current:
         return None
 
-    base_name = _get_platform_base_name()
+    base_name = get_platform_base_name()
     if not base_name:
         return None
 
-    asset = _pick_asset(data.get("assets", []), base_name)
+    asset = pick_asset(data.get("assets", []), base_name)
     if not asset:
         return None
 
@@ -98,8 +60,8 @@ def _download_with_progress(url, dest, progress_cb=None):
         urllib.request.urlretrieve(url, dest, report)
         return dest
     except Exception:
-        if os.path.exists(dest):
-            os.unlink(dest)
+        if __import__("os").path.exists(dest):
+            __import__("os").unlink(dest)
         raise
 
 
@@ -108,10 +70,7 @@ def _prepare_update(zip_path):
     parent = current_dir.parent
     zip_file = zipfile.ZipFile(zip_path)
     zip_name = [n for n in zip_file.namelist() if "/" in n and not n.startswith("__MACOSX")]
-    if zip_name:
-        zip_top = zip_name[0].split("/")[0]
-    else:
-        zip_top = None
+    zip_top = zip_name[0].split("/")[0] if zip_name else None
 
     update_dir = parent / f"{current_dir.name}_update"
     if update_dir.exists():
@@ -128,79 +87,24 @@ def _prepare_update(zip_path):
                 shutil.move(str(item), str(update_dir / item.name))
             inner.rmdir()
 
-    videos_dir = current_dir / "videos"
-    if videos_dir.is_dir():
-        dst_videos = update_dir / "videos"
-        if dst_videos.exists():
-            shutil.rmtree(dst_videos)
-        shutil.copytree(str(videos_dir), str(dst_videos))
-
-    config_src = current_dir / "config.json"
-    if config_src.exists():
-        shutil.copy2(str(config_src), str(update_dir / "config.json"))
-
-    config_dir = current_dir / "config"
-    if config_dir.is_dir():
-        dst_config = update_dir / "config"
-        if not dst_config.exists():
-            shutil.copytree(str(config_dir), str(dst_config), dirs_exist_ok=True)
-
-    deps_dir = current_dir / "deps"
-    if deps_dir.is_dir():
-        dst_deps = update_dir / "deps"
-        if not dst_deps.exists():
-            shutil.copytree(str(deps_dir), str(dst_deps), dirs_exist_ok=True)
-
-    models_dir = current_dir / "models"
-    if models_dir.is_dir():
-        dst_models = update_dir / "models"
-        if not dst_models.exists():
-            shutil.copytree(str(models_dir), str(dst_models), dirs_exist_ok=True)
+    for item in ("videos", "config.json", "config", "deps", "models"):
+        src = current_dir / item
+        dst = update_dir / item
+        if src.exists():
+            if dst.exists():
+                if dst.is_dir():
+                    shutil.rmtree(dst)
+                else:
+                    dst.unlink()
+            try:
+                if src.is_dir():
+                    shutil.copytree(str(src), str(dst))
+                else:
+                    shutil.copy2(str(src), str(dst))
+            except Exception:
+                pass
 
     return update_dir
-
-
-def _create_swap_script(current_dir, update_dir, parent_dir):
-    old_name = current_dir.name
-    new_name = update_dir.name
-
-    if sys.platform == "win32":
-        script_content = (
-            f'@echo off\r\n'
-            f'timeout /t 2 /nobreak >nul\r\n'
-            f'rmdir /s /q "{old_name}.old" 2>nul\r\n'
-            f'move /Y "{old_name}" "{old_name}.old"\r\n'
-            f'move /Y "{new_name}" "{old_name}"\r\n'
-            f'rmdir /s /q "{old_name}.old" 2>nul\r\n'
-            f'\r\n'
-            f'echo ==========================================\r\n'
-            f'echo  LocallyFPS updated successfully!\r\n'
-            f'echo  Run start.bat to launch the new version.\r\n'
-            f'echo ==========================================\r\n'
-            f'pause\r\n'
-        )
-        script_path = parent_dir / "_update_locallyfps.bat"
-        script_path.write_text(script_content, encoding="ascii")
-    else:
-        script_content = (
-            "#!/bin/bash\n"
-            f'cd "{parent_dir}"\n'
-            f'sleep 2\n'
-            f'rm -rf "{old_name}.old" 2>/dev/null\n'
-            f'mv "{old_name}" "{old_name}.old"\n'
-            f'mv "{new_name}" "{old_name}"\n'
-            f'rm -rf "{old_name}.old" 2>/dev/null\n'
-            f'echo\n'
-            f'echo "=========================================="\n'
-            f'echo " LocallyFPS updated successfully!"\n'
-            f'echo " Run start.sh to launch the new version."\n'
-            f'echo "=========================================="\n'
-        )
-        script_path = parent_dir / "_update_locallyfps.sh"
-        script_path.write_text(script_content)
-        script_path.chmod(0o755)
-
-    return script_path
 
 
 def run_updater():
@@ -235,7 +139,7 @@ def run_updater():
 
     from .progress import Spinner
 
-    tmp = Path(tempfile.gettempdir()) / f"locallyfps_update_{os.getpid()}.zip"
+    tmp = Path(tempfile.gettempdir()) / f"locallyfps_update_{__import__('os').getpid()}.zip"
 
     sp = Spinner(_("Downloading update..."))
     try:
@@ -264,9 +168,7 @@ def run_updater():
         if tmp.exists():
             tmp.unlink()
 
-    current_dir = paths.BASE_DIR
-    parent_dir = current_dir.parent
-    script_path = _create_swap_script(current_dir, update_dir, parent_dir)
+    script_path = create_swap_script(paths.BASE_DIR, update_dir)
 
     restart_msg = _("Applying update and restarting...")
     print()
@@ -274,18 +176,5 @@ def run_updater():
     print(f"  {Color.dim(restart_msg)}")
 
     sys.stdout.flush()
-    if sys.platform == "win32":
-        subprocess.Popen(
-            ["cmd", "/c", "start", str(script_path)],
-            cwd=str(parent_dir),
-            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
-        )
-    else:
-        subprocess.Popen(
-            [str(script_path)],
-            cwd=str(parent_dir),
-            start_new_session=True,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
+    launch_swap(script_path)
     sys.exit(0)

@@ -6,6 +6,7 @@ deps/
 models/
 videos/
 runtime/
+config/manifest.json
 *.log
 .DS_Store
 Thumbs.db

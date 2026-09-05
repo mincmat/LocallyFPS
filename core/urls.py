@@ -1,16 +1,47 @@
 import json
-import sys
+import time
+import warnings
 from urllib.request import Request, urlopen
+
 from . import paths
+
+RETRY_COUNT = 3
+RETRY_DELAY = 2
+REQUEST_TIMEOUT = 15
+
+FALLBACK_RIFE_URLS = {
+    "linux": "https://github.com/nihui/rife-ncnn-vulkan/releases/download/20221029/rife-ncnn-vulkan-20221029-ubuntu.zip",
+    "windows": "https://github.com/nihui/rife-ncnn-vulkan/releases/download/20221029/rife-ncnn-vulkan-20221029-windows.zip",
+    "macos": "https://github.com/nihui/rife-ncnn-vulkan/releases/download/20221029/rife-ncnn-vulkan-20221029-macos.zip",
+}
+
+FALLBACK_FFMPEG_URLS = {
+    "linux": "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz",
+    "windows": "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip",
+    "macos": None,
+}
+
+
+def _fetch_json(url, timeout=REQUEST_TIMEOUT, retries=RETRY_COUNT):
+    req = Request(url, headers={
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "LocallyFPS",
+    })
+    last_err = None
+    for attempt in range(retries):
+        try:
+            with urlopen(req, timeout=timeout) as resp:
+                return json.loads(resp.read().decode())
+        except Exception as exc:
+            last_err = exc
+            if attempt < retries - 1:
+                time.sleep(RETRY_DELAY * (2 ** attempt))
+    return None
 
 
 def _fetch_latest_rife_urls():
-    url = "https://api.github.com/repos/nihui/rife-ncnn-vulkan/releases/latest"
-    req = Request(url, headers={"Accept": "application/vnd.github+json", "User-Agent": "LocallyFPS"})
-    try:
-        with urlopen(req, timeout=10) as resp:
-            data = json.loads(resp.read().decode())
-    except Exception:
+    data = _fetch_json("https://api.github.com/repos/nihui/rife-ncnn-vulkan/releases/latest")
+    if not data:
         return {}
     assets = data.get("assets", [])
     mapping = {}
@@ -34,20 +65,16 @@ def get_rife_release_urls():
     if _RIFE_URLS_CACHE is None:
         _RIFE_URLS_CACHE = _fetch_latest_rife_urls()
         if not _RIFE_URLS_CACHE:
-            _RIFE_URLS_CACHE = {
-                "linux": "https://github.com/nihui/rife-ncnn-vulkan/releases/download/20221029/rife-ncnn-vulkan-20221029-ubuntu.zip",
-                "windows": "https://github.com/nihui/rife-ncnn-vulkan/releases/download/20221029/rife-ncnn-vulkan-20221029-windows.zip",
-                "macos": "https://github.com/nihui/rife-ncnn-vulkan/releases/download/20221029/rife-ncnn-vulkan-20221029-macos.zip",
-            }
+            _RIFE_URLS_CACHE = dict(FALLBACK_RIFE_URLS)
+            warnings.warn(
+                "GitHub API unavailable for RIFE URLs, using fallback (20221029).",
+                stacklevel=2,
+            )
     return _RIFE_URLS_CACHE
 
 
 def get_ffmpeg_release_urls():
-    return {
-        "linux": "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz",
-        "windows": "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip",
-        "macos": None,
-    }
+    return dict(FALLBACK_FFMPEG_URLS)
 
 
 RIFE_RELEASE_URLS = get_rife_release_urls

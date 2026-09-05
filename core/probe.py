@@ -123,6 +123,13 @@ def probe_video_file(path):
             "size_bytes": int(fmt.get("size", 0) or 0),
             "has_audio": len(audio_tracks) > 0,
             "audio_tracks": len(audio_tracks),
+            "pix_fmt": stream.get("pix_fmt", "unknown"),
+            "color_space": stream.get("color_space"),
+            "color_transfer": stream.get("color_transfer"),
+            "color_primaries": stream.get("color_primaries"),
+            "color_range": stream.get("color_range"),
+            "bits_per_raw_sample": stream.get("bits_per_raw_sample"),
+            "profile": stream.get("profile"),
         }
     except (KeyError, IndexError, ValueError, json.JSONDecodeError):
         return None
@@ -133,6 +140,10 @@ def print_video_metadata(info):
     status(f"{_('Valid video:')} {Color.bold(info['path'].name)}", "OK")
     print(f"    {Color.dim(_('Container'))}  : {info['container']} ({info['extension']})")
     print(f"    {Color.dim(_('Codec'))}       : {info['codec']}")
+    if info.get("profile"):
+        print(f"    {Color.dim(_('Profile'))}     : {info['profile']}")
+    if info.get("pix_fmt") and info["pix_fmt"] != "unknown":
+        print(f"    {Color.dim(_('Pixel Format'))}: {info['pix_fmt']}")
     w = info['width']
     h = info['height']
     print(f"    {Color.dim(_('Resolution'))}  : {Color.bold(f'{w}x{h}')}")
@@ -141,4 +152,9 @@ def print_video_metadata(info):
     print(f"    {Color.dim(_('Size'))}      : {human_size(info['size_bytes'])}")
     audio_str = f"{_('yes')} ({info['audio_tracks']} {_('tracks')})" if info['has_audio'] else _("no")
     print(f"    {Color.dim(_('Audio'))}       : {audio_str}")
+    if info.get("color_space") or info.get("color_transfer"):
+        color_str = f"{info.get('color_space', 'N/A')}, {info.get('color_transfer', 'N/A')}"
+        if info.get("color_range"):
+            color_str += f", range={info['color_range']}"
+        print(f"    {Color.dim(_('Color'))}       : {color_str}")
     print()

@@ -82,6 +82,28 @@ def _get_fps_mode_args():
     return args
 
 
+def _get_pix_fmt_filter(info):
+    """Return a -vf filter string to normalize pixel format for JPEG extraction.
+
+    HEVC Main 10 uses yuv420p10le which cannot be directly encoded to JPEG
+    without quality loss or corruption. This forces conversion to yuv420p.
+    For HDR content (smpte2084, arib-std-b67), adds tone mapping to SDR.
+    """
+    if not info:
+        return "format=yuv420p"
+
+    color_transfer = info.get("color_transfer", "")
+    is_hdr = color_transfer in ("smpte2084", "arib-std-b67")
+
+    if is_hdr:
+        return (
+            "zscale=t=linear:npl=100,format=gbrpf32le,"
+            "zscale=p=bt709:tonemap=hable,"
+            "zscale=t=bt709:range=pc,format=yuv420p"
+        )
+    return "format=yuv420p"
+
+
 def extract_frames(video_path, frames_dir, info=None, gpu_settings=None, progress_cb=None):
     if info:
         w = max(info.get("width", 1920), 1920)
@@ -95,14 +117,18 @@ def extract_frames(video_path, frames_dir, info=None, gpu_settings=None, progres
         total_est = max(int(info.get("fps", 30) * info.get("duration", 60)), 100)
 
     ffmpeg_bin = _resolve_ffmpeg_bin()
+
+    pix_fmt_filter = _get_pix_fmt_filter(info)
+
     cmd = [
         ffmpeg_bin, "-y",
         "-threads", "auto",
         "-i", str(video_path),
         *_get_fps_mode_args(),
-        "-q:v", "1",
-        str(frames_dir / "%08d.jpg"),
     ]
+    if pix_fmt_filter:
+        cmd += ["-vf", pix_fmt_filter]
+    cmd += ["-q:v", "1", str(frames_dir / "%08d.jpg")]
     stop_event = threading.Event()
     if progress_cb:
         watcher = threading.Thread(
@@ -144,9 +170,10 @@ def extract_frames(video_path, frames_dir, info=None, gpu_settings=None, progres
                 "-threads", "auto",
                 "-i", str(video_path),
                 *fallback,
-                "-q:v", "1",
-                str(frames_dir / "%08d.jpg"),
             ]
+            if pix_fmt_filter:
+                cmd_fallback += ["-vf", pix_fmt_filter]
+            cmd_fallback += ["-q:v", "1", str(frames_dir / "%08d.jpg")]
             result = subprocess.run(cmd_fallback, capture_output=True, text=True)
 
     stop_event.set()

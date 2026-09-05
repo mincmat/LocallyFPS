@@ -7,8 +7,6 @@ Usage: python3 update.py
 
 import json
 import os
-import platform
-import re
 import shutil
 import sys
 import tempfile
@@ -17,45 +15,14 @@ from pathlib import Path
 from urllib.error import URLError
 from urllib.request import Request, urlopen, urlretrieve
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from core.update_utils import (
+    GITHUB_API, ASSET_MAP, parse_version, get_platform_name,
+    pick_asset, create_swap_script, launch_swap, human_size,
+)
+
 REPO = "mincmat/LocallyFPS"
-API_URL = f"https://api.github.com/repos/{REPO}/releases/latest"
-
-ASSET_MAP = {
-    "linux": "LocallyFPS_Linux",
-    "macos": "LocallyFPS_macOS",
-    "windows": "LocallyFPS_Windows",
-}
-
-
-def _pick_asset(assets, base_name):
-    """Match 'LocallyFPS_<Platform>.zip' or 'LocallyFPS_<Platform>_vX.Y.Z.zip'."""
-    pattern = re.compile(
-        r"^" + re.escape(base_name) + r"(_v\d+(?:\.\d+)*)?\.zip$", re.IGNORECASE
-    )
-    matches = [a for a in assets if pattern.match(a.get("name", ""))]
-    if not matches:
-        return None
-
-    def version_key(asset):
-        m = re.search(r"_v(\d+(?:\.\d+)*)\.zip$", asset.get("name", ""), re.IGNORECASE)
-        if m:
-            try:
-                return tuple(int(x) for x in m.group(1).split("."))
-            except ValueError:
-                pass
-        return ()
-
-    return max(matches, key=version_key)
-
-
-def _platform():
-    if sys.platform.startswith("linux"):
-        return "linux"
-    if sys.platform == "darwin":
-        return "macos"
-    if sys.platform in ("win32", "cygwin"):
-        return "windows"
-    sys.exit("Unsupported platform: " + sys.platform)
 
 
 def _print(msg, end="\n"):
@@ -64,11 +31,10 @@ def _print(msg, end="\n"):
 
 
 def check_latest():
-    """Return {"tag_name": str, "download_url": str, "size": int} or None."""
-    plat = _platform()
+    plat = get_platform_name()
     base_name = ASSET_MAP.get(plat, "")
 
-    req = Request(API_URL)
+    req = Request(f"{GITHUB_API}/latest")
     req.add_header("Accept", "application/vnd.github+json")
     req.add_header("User-Agent", "LocallyFPS-Updater")
     req.add_header("X-GitHub-Api-Version", "2022-11-28")
@@ -88,7 +54,7 @@ def check_latest():
         _print("Error: no release tag found")
         return None
 
-    asset = _pick_asset(data.get("assets", []), base_name)
+    asset = pick_asset(data.get("assets", []), base_name)
     if not asset:
         _print(f"Error: no asset matching '{base_name}(_vX.Y.Z)?.zip' in release {tag}")
         return None
@@ -100,27 +66,15 @@ def check_latest():
     }
 
 
-def _human_size(size_bytes):
-    for unit in ("B", "KB", "MB", "GB"):
-        if size_bytes < 1024:
-            return f"{size_bytes:.0f} {unit}"
-        size_bytes /= 1024
-    return f"{size_bytes:.1f} TB"
-
-
 def update(info):
-    """Download, extract, prepare swap, and self-destruct to swap."""
-    plat = _platform()
     base = Path(__file__).resolve().parent
     url = info["download_url"]
     tag = info["tag_name"]
-    size = _human_size(info["size"])
+    size = human_size(info["size"])
     temp_dir = Path(tempfile.mkdtemp(prefix="lfps_update_"))
     zip_path = temp_dir / "update.zip"
 
     _print(f"Downloading {tag} ({size})...")
-    sys.stdout.write("  [")
-    sys.stdout.flush()
     last_pct = [-1]
 
     def _hook(blocks, block_size, total):
@@ -159,7 +113,6 @@ def update(info):
         shutil.rmtree(extract_dir, ignore_errors=True)
         return False
 
-    # Flatten single top-level folder so files land directly in extract_dir
     macosx = extract_dir / "__MACOSX"
     if macosx.exists():
         shutil.rmtree(macosx, ignore_errors=True)
@@ -195,7 +148,7 @@ def update(info):
                 pass
 
     _print("Preparing swap...")
-    script = _create_swap_script(plat, base, extract_dir)
+    script = create_swap_script(base, extract_dir)
     shutil.rmtree(temp_dir, ignore_errors=True)
 
     _print(f"  Ready to update to {tag}.")
@@ -214,7 +167,7 @@ def update(info):
         return False
 
     try:
-        subp = _launch_swap(script, base, extract_dir)
+        subp = launch_swap(script)
         if subp:
             sys.exit(0)
     except Exception as e:
@@ -227,61 +180,6 @@ def update(info):
     _print(f"  2. mv {extract_dir} {base}")
     _print(f"  3. Delete {base}.old when ready")
     return True
-
-
-def _create_swap_script(plat, old_dir, new_dir):
-    if plat == "windows":
-        script = old_dir / "_lfps_swap.bat"
-        bat = (
-            f"@echo off\r\n"
-            f"ping -n 2 127.0.0.1 >nul\r\n"
-            f"rmdir /s /q \"{old_dir}.old\" 2>nul\r\n"
-            f"move \"{old_dir}\" \"{old_dir}.old\"\r\n"
-            f"move \"{new_dir}\" \"{old_dir}\"\r\n"
-            f'start "" "cmd" /k echo Update complete! You can now run start.bat.\r\n'
-            f"del \"%~f0\"\r\n"
-        )
-        with open(script, "w", newline="\r\n") as f:
-            f.write(bat)
-        return script
-
-    script = old_dir / "_lfps_swap.sh"
-    sh = (
-        "#!/usr/bin/env bash\n"
-        "sleep 1\n"
-        f'rm -rf "{old_dir}.old"\n'
-        f'mv "{old_dir}" "{old_dir}.old"\n'
-        f'mv "{new_dir}" "{old_dir}"\n'
-        'echo "Update complete! You can now run start.sh or start.command."\n'
-        f'rm -f "{script}"\n'
-    )
-    with open(script, "w") as f:
-        f.write(sh)
-    os.chmod(script, 0o755)
-    return script
-
-
-def _launch_swap(script, old_dir, new_dir):
-    import subprocess
-
-    if sys.platform in ("win32", "cygwin"):
-        return subprocess.Popen(
-            ["cmd", "/c", str(script)],
-            cwd=str(old_dir.parent),
-            creationflags=0x00000008 if hasattr(subprocess, 'DETACHED_PROCESS') else 0,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            close_fds=True,
-        )
-    else:
-        return subprocess.Popen(
-            ["bash", str(script)],
-            cwd=str(old_dir.parent),
-            start_new_session=True,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            close_fds=True,
-        )
 
 
 def main():

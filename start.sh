@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# start.sh – LocallyFPS portable launcher (Linux).
+# start.sh – LocallyFPS portable launcher (Linux / macOS).
 #
 
 set -euo pipefail

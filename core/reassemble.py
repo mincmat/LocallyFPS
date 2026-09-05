@@ -52,6 +52,18 @@ def _compatible_output(codec_name, output_path):
     return output_path
 
 
+def _add_color_flags(cmd, info):
+    """Append color metadata flags to ffmpeg command if available."""
+    if info.get("color_primaries"):
+        cmd += ["-color_primaries", info["color_primaries"]]
+    if info.get("color_space"):
+        cmd += ["-colorspace", info["color_space"]]
+    if info.get("color_transfer"):
+        cmd += ["-color_trc", info["color_transfer"]]
+    if info.get("color_range"):
+        cmd += ["-color_range", info["color_range"]]
+
+
 def _pick_best_encoder(preferred="libx264"):
     from platform import get_platform
     plat = get_platform()
@@ -85,7 +97,7 @@ def reassemble_video(
     out_frames_dir, original_video, target_fps,
     has_audio, output_path, result_frames,
     encoder_name="libx264", crf=18, preset="medium",
-    gpu_settings=None, progress_cb=None
+    gpu_settings=None, progress_cb=None, info=None
 ):
     from platform import get_platform
     plat = get_platform()
@@ -139,6 +151,8 @@ def reassemble_video(
     else:
         cmd += ["-cq", str(crf)]
     cmd += ["-pix_fmt", enc["pix_fmt"]]
+    if info:
+        _add_color_flags(cmd, info)
     if has_audio:
         cmd += ["-c:a", "aac", "-b:a", "192k"]
     cmd += ["-t", str(video_duration)]
@@ -220,6 +234,8 @@ def reassemble_video(
                 cmd += ["-vf", "format=yuv420p", "-q:v", "5"]
             else:
                 cmd += ["-crf", str(crf), "-preset", preset, "-pix_fmt", enc["pix_fmt"]]
+            if info:
+                _add_color_flags(cmd, info)
             if has_audio:
                 cmd += ["-c:a", "aac", "-b:a", "192k"]
             cmd += ["-t", str(video_duration), str(actual_output_path)]

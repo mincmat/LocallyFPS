@@ -1,3 +1,4 @@
+import os
 import subprocess
 import sys
 import threading
@@ -23,7 +24,7 @@ def _model_supports_custom_frame_count(model):
 def run_interpolation(
     in_frames_dir, out_frames_dir, model, threads,
     source_frame_count, source_fps, target_fps,
-    gpu_id=None, uhd=False, tile_size=0, progress_cb=None
+    gpu_id=None, uhd=False, tile_size=0, rife_cpu=False, progress_cb=None
 ):
     supports_n = _model_supports_custom_frame_count(model)
     if supports_n:
@@ -38,21 +39,32 @@ def run_interpolation(
             status(f"{_('Model')} '{model}' {_('only supports 2x frame rate.')}", "WARN")
             status(f"{_('Output will be at')} {actual_output_fps:.3f} fps {_('instead.')}", "WARN")
 
-    cmd = [
-        str(paths.RIFE_BIN),
-        "-i", str(in_frames_dir),
-        "-o", str(out_frames_dir),
-        "-m", str(paths.MODELS_DIR / model),
-        "-j", threads,
-    ]
+    if rife_cpu:
+        status(_("Integrated GPU cannot handle this resolution; using CPU instead."), "WARN")
+        status(_("This will be slower. A dedicated GPU is recommended for large videos."), "WARN")
+        cpu_threads = f"1:{min(os.cpu_count() or 4, 4)}:{min(os.cpu_count() or 4, 4)}"
+        cmd = [
+            str(paths.RIFE_BIN),
+            "-i", str(in_frames_dir),
+            "-o", str(out_frames_dir),
+            "-m", str(paths.MODELS_DIR / model),
+            "-j", cpu_threads,
+            "-g", "-1",
+        ]
+    else:
+        cmd = [
+            str(paths.RIFE_BIN),
+            "-i", str(in_frames_dir),
+            "-o", str(out_frames_dir),
+            "-m", str(paths.MODELS_DIR / model),
+            "-j", threads,
+        ]
+        if gpu_id is not None:
+            cmd += ["-g", str(gpu_id)]
     if supports_n:
         cmd += ["-n", str(target_frame_count)]
-    if gpu_id is not None:
-        cmd += ["-g", str(gpu_id)]
     if uhd:
         cmd += ["-u"]
-    if tile_size > 0:
-        cmd += ["-t", str(tile_size)]
 
     desc = _("Interpolating")
     try:

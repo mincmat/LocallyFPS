@@ -1,12 +1,11 @@
-import os
 import shutil
 import tempfile
-import urllib.request
 import zipfile
 from pathlib import Path
 
 from . import paths
 from .console import status
+from .deps import download_and_extract, sha256_file
 from .i18n import _
 from .progress import DownloadProgress
 from .urls import RIFE_RELEASE_URLS
@@ -21,42 +20,84 @@ def list_available_rife_models():
     return found if found else ["rife-v4.6"]
 
 
-def install_model(model_name):
-    models_dir = paths.MODELS_DIR
-    model_dir = models_dir / model_name
-    if model_dir.is_dir():
-        return True
+def _get_cached_extract_dir():
+    return paths.CACHE_DIR / "rife_release_extracted"
+
+
+def _ensure_rife_release_cached():
+    extract_dir = _get_cached_extract_dir()
+    if extract_dir.is_dir() and any(extract_dir.iterdir()):
+        return extract_dir
+
     url = RIFE_RELEASE_URLS().get(paths.OS_NAME)
     if not url:
         status(_("No download URL for models on this platform."), "ERROR")
-        return False
-    with tempfile.TemporaryDirectory() as tmpdir:
-        zip_path = Path(tmpdir) / "rife.zip"
-        dl = DownloadProgress(_("Downloading"))
+        return None
+
+    paths.CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    cache_zip = paths.CACHE_DIR / "rife_release.zip"
+
+    if not cache_zip.is_file():
+        status(_("Downloading RIFE release (one-time, ~400 MB)..."), "INFO")
+        dl = DownloadProgress(_("Downloading RIFE release"))
         try:
-            urllib.request.urlretrieve(url, zip_path, reporthook=dl)
+            import urllib.request
+            urllib.request.urlretrieve(url, cache_zip, reporthook=dl)
         except KeyboardInterrupt:
             dl.close()
-            print()
             status(_("Download cancelled."), "WARN")
-            return False
+            return None
         except Exception as exc:
             dl.close()
             status(f"{_('Download failed:')} {exc}", "ERROR")
-            return False
+            if cache_zip.exists():
+                cache_zip.unlink()
+            return None
         finally:
             dl.close()
-        extract_dir = Path(tmpdir) / "extracted"
-        with zipfile.ZipFile(zip_path) as zf:
+
+    status(_("Extracting RIFE release..."), "INFO")
+    extract_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        with zipfile.ZipFile(cache_zip) as zf:
             zf.extractall(extract_dir)
-        subdirs = [d for d in extract_dir.iterdir() if d.is_dir()]
-        source_dir = subdirs[0] if subdirs else extract_dir
-        model_src = source_dir / model_name
-        if not model_src.is_dir():
-            status(f"{_('Model')} {model_name} {_('not found in release archive.')}", "ERROR")
-            return False
-        models_dir.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(model_src, model_dir, dirs_exist_ok=True)
+    except Exception as exc:
+        status(f"{_('Extraction failed:')} {exc}", "ERROR")
+        shutil.rmtree(extract_dir, ignore_errors=True)
+        return None
+
+    entries = list(extract_dir.iterdir())
+    if len(entries) == 1 and entries[0].is_dir():
+        inner = entries[0]
+        for item in inner.iterdir():
+            shutil.move(str(item), str(extract_dir / item.name))
+        inner.rmdir()
+
+    return extract_dir
+
+
+def install_model(model_name):
+    from . import manifest
+
+    model_dir = paths.MODELS_DIR / model_name
+    if model_dir.is_dir():
+        if manifest.is_installed(model_name):
+            return True
+        manifest.record_dir(model_name, model_name, model_dir)
+        return True
+
+    extract_dir = _ensure_rife_release_cached()
+    if not extract_dir:
+        return False
+
+    model_src = extract_dir / model_name
+    if not model_src.is_dir():
+        status(f"{_('Model')} {model_name} {_('not found in release archive.')}", "ERROR")
+        return False
+
+    paths.MODELS_DIR.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(model_src, model_dir, dirs_exist_ok=True)
+    manifest.record_dir(model_name, model_name, model_dir)
     return True
 
 

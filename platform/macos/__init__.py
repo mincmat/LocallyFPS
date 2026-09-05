@@ -13,29 +13,26 @@ from core.i18n import _
 
 
 ENCODER_PRESETS = {
-    "libx264":      {"codec": "libx264",      "hwaccel": None,  "pix_fmt": "yuv420p"},
-    "libx265":      {"codec": "libx265",      "hwaccel": None,  "pix_fmt": "yuv420p"},
-    "libopenh264":  {"codec": "libopenh264",  "hwaccel": None,  "pix_fmt": "yuv420p"},
-    "mpeg4":        {"codec": "mpeg4",        "hwaccel": None,  "pix_fmt": "yuv420p"},
-    "h264_nvenc":   {"codec": "h264_nvenc",   "hwaccel": "cuda", "pix_fmt": "yuv420p"},
-    "hevc_nvenc":   {"codec": "hevc_nvenc",   "hwaccel": "cuda", "pix_fmt": "yuv420p"},
-    "h264_vaapi":   {"codec": "h264_vaapi",   "hwaccel": "vaapi","pix_fmt": "vaapi"},
-    "hevc_vaapi":   {"codec": "hevc_vaapi",   "hwaccel": "vaapi","pix_fmt": "vaapi"},
-    "h264_qsv":     {"codec": "h264_qsv",     "hwaccel": "qsv",  "pix_fmt": "nv12"},
-    "hevc_qsv":     {"codec": "hevc_qsv",     "hwaccel": "qsv",  "pix_fmt": "nv12"},
+    "libx264":            {"codec": "libx264",            "hwaccel": None,         "pix_fmt": "yuv420p"},
+    "libx265":            {"codec": "libx265",            "hwaccel": None,         "pix_fmt": "yuv420p"},
+    "libopenh264":        {"codec": "libopenh264",        "hwaccel": None,         "pix_fmt": "yuv420p"},
+    "mpeg4":              {"codec": "mpeg4",              "hwaccel": None,         "pix_fmt": "yuv420p"},
+    "h264_videotoolbox":  {"codec": "h264_videotoolbox",  "hwaccel": "videotoolbox", "pix_fmt": "nv12"},
+    "hevc_videotoolbox":  {"codec": "hevc_videotoolbox",  "hwaccel": "videotoolbox", "pix_fmt": "nv12"},
+    "h264_qsv":           {"codec": "h264_qsv",           "hwaccel": "qsv",        "pix_fmt": "nv12"},
+    "hevc_qsv":           {"codec": "hevc_qsv",           "hwaccel": "qsv",        "pix_fmt": "nv12"},
 }
 
 HW_ENCODER_MAP = [
-    ("nvidia", ["h264_nvenc", "hevc_nvenc"]),
-    ("amd",    ["h264_vaapi", "hevc_vaapi"]),
-    ("intel",  ["h264_qsv", "hevc_qsv", "h264_vaapi", "hevc_vaapi"]),
+    ("apple",  ["h264_videotoolbox", "hevc_videotoolbox"]),
+    ("intel",  ["h264_qsv", "hevc_qsv"]),
 ]
 
 
-class LinuxPlatform:
-    os_name = "linux"
+class MacOSPlatform:
+    os_name = "macos"
     bin_ext = ""
-    default_language = "en"
+    default_language = "es"
 
     def get_encoder_presets(self):
         return ENCODER_PRESETS
@@ -44,34 +41,42 @@ class LinuxPlatform:
         return HW_ENCODER_MAP
 
     def detect_pci_gpus(self):
-        if shutil.which("lspci") is None:
-            return []
         try:
-            result = subprocess.run(["lspci", "-nn"], capture_output=True, text=True, timeout=10)
+            result = subprocess.run(
+                ["system_profiler", "SPDisplaysDataType"],
+                capture_output=True, text=True, timeout=15,
+            )
         except Exception:
             return []
         gpus = []
         for line in result.stdout.splitlines():
-            if not re.search(r"VGA compatible controller|3D controller|Display controller", line, re.I):
-                continue
-            low = line.lower()
-            if "nvidia" in low:
-                vendor = "nvidia"
-            elif "amd" in low or "ati" in low or "radeon" in low:
-                vendor = "amd"
-            elif "intel" in low:
-                vendor = "intel"
-            else:
-                continue
-            name = line.split(":", 2)[-1].strip()
-            gpus.append((vendor, name))
+            m = re.match(r"\s*Chipset Model:\s*(.+)", line)
+            if not m:
+                m = re.match(r"\s*Chip:\s*(.+)", line)
+            if m:
+                name = m.group(1).strip()
+                low = name.lower()
+                if "apple" in low:
+                    vendor = "apple"
+                elif "intel" in low:
+                    vendor = "intel"
+                elif "amd" in low or "radeon" in low:
+                    vendor = "amd"
+                elif "nvidia" in low:
+                    vendor = "nvidia"
+                else:
+                    continue
+                gpus.append((vendor, name))
         return gpus
 
     def detect_vulkan_gpus(self):
         if shutil.which("vulkaninfo") is None:
             return []
         try:
-            result = subprocess.run(["vulkaninfo", "--summary"], capture_output=True, text=True, timeout=15)
+            result = subprocess.run(
+                ["vulkaninfo", "--summary"],
+                capture_output=True, text=True, timeout=15,
+            )
         except Exception:
             return []
         devices = []
@@ -90,7 +95,10 @@ class LinuxPlatform:
             return real_devices
         try:
             import json
-            result2 = subprocess.run(["vulkaninfo", "--summary", "--json"], capture_output=True, text=True, timeout=15)
+            result2 = subprocess.run(
+                ["vulkaninfo", "--summary", "--json"],
+                capture_output=True, text=True, timeout=15,
+            )
             data = json.loads(result2.stdout)
             for dev in data.get("devices", []):
                 uid = dev.get("id", 0)
@@ -108,11 +116,13 @@ class LinuxPlatform:
 
         if not devices:
             status(_("No GPU detected via Vulkan; using conservative settings."), "WARN")
+            pci = self.detect_pci_gpus()
+            has_apple_silicon = any(v == "apple" for v, _ in pci)
             t = f"1:{min(cpus, 2)}:{min(cpus, 2)}"
-            rife_cpu = max_dim >= 2560
-            return {"gpu_id": None, "gpu_name": "not detected", "threads": t,
-                    "uhd": False, "rife_cpu": rife_cpu, "class": "unknown", "tile_size": 0,
-                    "ffmpeg_gpu": {"hwaccel": "auto", "hint": ""}}
+            rife_cpu = max_dim >= 2560 or has_apple_silicon
+            return {"gpu_id": None, "gpu_name": pci[0][1] if pci else "not detected",
+                    "threads": t, "uhd": False, "rife_cpu": rife_cpu, "class": "unknown",
+                    "tile_size": 0, "ffmpeg_gpu": {"hwaccel": "auto", "hint": ""}}
 
         priority = {"discrete_high": 0, "discrete": 1, "integrated": 2, "unknown": 3}
         sorted_devs = sorted(devices, key=lambda d: priority.get(d[2], 3))
@@ -137,8 +147,6 @@ class LinuxPlatform:
                 tile_size = 512
             elif cls == "integrated":
                 tile_size = 256
-            else:
-                tile_size = 0
 
         uhd = is_uhd_res and is_dedicated
         rife_cpu = (not is_dedicated) and max_dim >= 2560
@@ -148,12 +156,12 @@ class LinuxPlatform:
         if multi_gpu:
             for dev in sorted_devs:
                 if dev[2] == "integrated":
-                    ffmpeg_gpu = {"hwaccel": "vaapi", "hint": _(", ffmpeg on iGPU via VAAPI")}
+                    ffmpeg_gpu = {"hwaccel": "videotoolbox", "hint": _(", ffmpeg on iGPU via VideoToolbox")}
                     break
             if not ffmpeg_gpu["hint"]:
                 ffmpeg_gpu = {"hwaccel": "auto", "hint": ""}
-        elif "nvidia" in name.lower():
-            ffmpeg_gpu = {"hwaccel": "cuda", "hint": " (NVIDIA)"}
+        elif "apple" in name.lower():
+            ffmpeg_gpu = {"hwaccel": "videotoolbox", "hint": " (Apple)"}
 
         return {"gpu_id": gpu_id, "gpu_name": name, "threads": threads,
                 "uhd": uhd, "rife_cpu": rife_cpu, "class": cls, "tile_size": tile_size,
@@ -282,7 +290,6 @@ class LinuxPlatform:
             for i, opt in enumerate(options):
                 text = Color.bold(opt) if i == idx else opt
                 sys.stdout.write(pad + " " + (">" if i == idx else " ") + " " + text + "\r\n")
-            # Print hint at bottom right (same row as version, far right)
             if hint:
                 sys.stdout.write("\x1b[s")
                 hint_col = max(1, term_w - len(hint) - 1)
@@ -322,7 +329,6 @@ class LinuxPlatform:
                     for i, opt in enumerate(options):
                         text = Color.bold(opt) if i == idx else opt
                         sys.stdout.write("\r" + pad + " " + (">" if i == idx else " ") + " " + text + "\x1b[K\r\n")
-                    # Reprint hint at bottom right
                     if hint:
                         sys.stdout.write("\x1b[s")
                         hint_col = max(1, term_w - len(hint) - 1)

@@ -80,6 +80,7 @@ def run_pipeline(info, target_fps, output_path, gpu_settings, model=None, intera
         gpu_id=gpu_settings["gpu_id"],
         uhd=gpu_settings["uhd"],
         tile_size=rife_tile_size,
+        rife_cpu=gpu_settings.get("rife_cpu", False),
         progress_cb=(lambda f: pb(0.30 + f * 0.55, _("Interpolating..."))) if pb else None,
     )
 
@@ -96,6 +97,7 @@ def run_pipeline(info, target_fps, output_path, gpu_settings, model=None, intera
         preset=CONFIG.get("preset", DEFAULT_CONFIG["preset"]),
         gpu_settings=gpu_settings,
         progress_cb=(lambda f: pb(0.85 + f * 0.15, _("Encoding video..."))) if pb else None,
+        info=info,
     )
 
     if pbar:

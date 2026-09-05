@@ -1,6 +1,7 @@
 import shutil
 import tarfile
 import tempfile
+import time
 import urllib.request
 import zipfile
 from pathlib import Path
@@ -11,62 +12,100 @@ from .i18n import _
 from .progress import DownloadProgress, DependencyBar
 from .urls import RIFE_RELEASE_URLS, FFMPEG_RELEASE_URLS
 
+RETRY_COUNT = 3
+RETRY_DELAY = 2
+
+
+def sha256_file(path):
+    import hashlib
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(8192), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def verify_binary(path, expected_sha256):
+    if not path.is_file():
+        return False
+    return sha256_file(path) == expected_sha256
+
 
 def download_and_extract(url, dest_dir, description="Downloading", bar=None):
     dest_dir = Path(dest_dir)
     dest_dir.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory() as tmpdir:
-        archive_path = Path(tmpdir) / "archive"
-        if bar:
-            def _hook(block_num, block_size, total_size):
-                downloaded = min(block_num * block_size, total_size)
-                pct = downloaded / total_size if total_size > 0 else 0
-                bar.update(pct, downloaded=downloaded, total=total_size)
+    last_err = None
+    for attempt in range(RETRY_COUNT):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            archive_path = Path(tmpdir) / "archive"
             try:
-                urllib.request.urlretrieve(url, archive_path, reporthook=_hook)
+                if bar:
+                    def _hook(block_num, block_size, total_size):
+                        downloaded = min(block_num * block_size, total_size)
+                        pct = downloaded / total_size if total_size > 0 else 0
+                        bar.update(pct, downloaded=downloaded, total=total_size)
+                    urllib.request.urlretrieve(url, archive_path, reporthook=_hook)
+                else:
+                    dl = DownloadProgress(description)
+                    try:
+                        urllib.request.urlretrieve(url, archive_path, reporthook=dl)
+                    finally:
+                        dl.close()
             except KeyboardInterrupt:
-                bar.fail(_("Download cancelled."))
+                if bar:
+                    bar.fail(_("Download cancelled."))
+                else:
+                    status(_("Download cancelled."), "WARN")
                 return False
             except Exception as exc:
-                bar.fail(str(exc))
+                last_err = exc
+                if attempt < RETRY_COUNT - 1:
+                    time.sleep(RETRY_DELAY * (2 ** attempt))
+                    continue
+                if bar:
+                    bar.fail(str(exc))
+                else:
+                    status(f"{_('Download failed:')} {exc}", "ERROR")
                 return False
-        else:
-            dl = DownloadProgress(_("Downloading"))
+
+            if bar:
+                bar.update(1.0, label=_("Extracting..."))
+            else:
+                status(_("Extracting..."))
+            url_lower = url.lower()
             try:
-                urllib.request.urlretrieve(url, archive_path, reporthook=dl)
-            except KeyboardInterrupt:
-                dl.close()
-                print()
-                status(_("Download cancelled."), "WARN")
-                return False
+                if url_lower.endswith(".zip"):
+                    with zipfile.ZipFile(archive_path) as zf:
+                        zf.extractall(dest_dir)
+                elif url_lower.endswith(".tar.xz") or url_lower.endswith(".txz"):
+                    with tarfile.open(archive_path, "r:xz") as tf:
+                        tf.extractall(dest_dir)
+                elif url_lower.endswith(".tar.gz") or url_lower.endswith(".tgz"):
+                    with tarfile.open(archive_path, "r:gz") as tf:
+                        tf.extractall(dest_dir)
+                else:
+                    with zipfile.ZipFile(archive_path) as zf:
+                        zf.extractall(dest_dir)
             except Exception as exc:
-                dl.close()
-                status(f"{_('Download failed:')} {exc}", "ERROR")
+                last_err = exc
+                if attempt < RETRY_COUNT - 1:
+                    time.sleep(RETRY_DELAY * (2 ** attempt))
+                    continue
+                status(f"{_('Extraction failed:')} {exc}", "ERROR")
                 return False
-            finally:
-                dl.close()
-        if bar:
-            bar.update(1.0, label=_("Extracting..."))
-        else:
-            status(_("Extracting..."))
-        url_lower = url.lower()
-        if url_lower.endswith(".zip"):
-            with zipfile.ZipFile(archive_path) as zf:
-                zf.extractall(dest_dir)
-        elif url_lower.endswith(".tar.xz") or url_lower.endswith(".txz"):
-            with tarfile.open(archive_path, "r:xz") as tf:
-                tf.extractall(dest_dir)
-        elif url_lower.endswith(".tar.gz") or url_lower.endswith(".tgz"):
-            with tarfile.open(archive_path, "r:gz") as tf:
-                tf.extractall(dest_dir)
-        else:
-            with zipfile.ZipFile(archive_path) as zf:
-                zf.extractall(dest_dir)
-    return True
+            return True
+    return False
+
+
+def _maybe_chmod(path):
+    try:
+        path.chmod(0o755)
+    except PermissionError:
+        pass
 
 
 def _setup_system_paths():
-    """Check system PATH for ffmpeg/ffprobe/rife and set paths if found. No prompts, no downloads."""
+    """Check system PATH for ffmpeg/ffprobe/rife and set paths if found."""
     if not paths.FFMPEG_BIN.is_file() or not paths.FFPROBE_BIN.is_file():
         sys_ffmpeg = shutil.which(f"ffmpeg{paths.BIN_EXT}") or shutil.which("ffmpeg")
         sys_ffprobe = shutil.which(f"ffprobe{paths.BIN_EXT}") or shutil.which("ffprobe")
@@ -79,64 +118,7 @@ def _setup_system_paths():
             paths.RIFE_BIN = Path(sys_rife)
 
 
-def ensure_ffmpeg(auto_yes=False, bar=None):
-    ffmpeg_bin = paths.FFMPEG_BIN
-    ffprobe_bin = paths.FFPROBE_BIN
-    if ffmpeg_bin.is_file() and ffprobe_bin.is_file():
-        return True
-    sys_ffmpeg = shutil.which(f"ffmpeg{paths.BIN_EXT}") or shutil.which("ffmpeg")
-    sys_ffprobe = shutil.which(f"ffprobe{paths.BIN_EXT}") or shutil.which("ffprobe")
-    if sys_ffmpeg and sys_ffprobe:
-        paths.FFMPEG_BIN = Path(sys_ffmpeg)
-        paths.FFPROBE_BIN = Path(sys_ffprobe)
-        return True
-    if bar:
-        bar.update(0, label=_("ffmpeg/ffprobe not found, downloading..."))
-    else:
-        status(_("ffmpeg/ffprobe not found locally or on system."), "WARN")
-    url = FFMPEG_RELEASE_URLS().get(paths.OS_NAME)
-    if url and (auto_yes or ask_yes_no(_("Download ffmpeg now?"), default=True)):
-        if download_and_extract(url, paths._FFMPEG_DIR, "ffmpeg", bar=bar):
-            _relocate_ffmpeg_binaries(paths._FFMPEG_DIR)
-            return True
-        if not auto_yes:
-            status(_("Could not download ffmpeg."), "ERROR")
-            if paths.OS_NAME == "macos":
-                hint = _("Install via: brew install ffmpeg")
-            else:
-                hint = _("Download from: https://johnvansickle.com/ffmpeg/")
-            status(
-                _("ffmpeg must be placed manually in:") + f"\n  {paths._FFMPEG_DIR}\n"
-                + hint,
-                "ERROR"
-            )
-            import sys
-            sys.exit(1)
-        return False
-    if not auto_yes:
-        if paths.OS_NAME == "macos":
-            hint = _("Install via: brew install ffmpeg")
-        else:
-            hint = _("Download from: https://johnvansickle.com/ffmpeg/")
-        status(
-            _("ffmpeg must be placed manually in:") + f"\n  {paths._FFMPEG_DIR}\n"
-            + hint,
-            "ERROR"
-        )
-        import sys
-        sys.exit(1)
-    return False
-
-
-def _maybe_chmod(path):
-    try:
-        path.chmod(0o755)
-    except PermissionError:
-        pass
-
-
 def _relocate_ffmpeg_binaries(base_dir):
-    """After extracting ffmpeg archive, move binaries from subdirectories to base_dir."""
     base_dir = Path(base_dir)
     for name in ("ffmpeg", "ffprobe"):
         target = base_dir / f"{name}{paths.BIN_EXT}"
@@ -149,45 +131,129 @@ def _relocate_ffmpeg_binaries(base_dir):
             break
 
 
+def ensure_ffmpeg(auto_yes=False, bar=None):
+    from . import manifest
+
+    ffmpeg_bin = paths.FFMPEG_BIN
+    ffprobe_bin = paths.FFPROBE_BIN
+
+    if ffmpeg_bin.is_file() and ffprobe_bin.is_file():
+        if manifest.is_installed("ffmpeg") and manifest.verify("ffmpeg", ffmpeg_bin):
+            return True
+        status(_("ffmpeg found but not in manifest, verifying..."), "INFO")
+        manifest.record("ffmpeg", "local", ffmpeg_bin)
+        return True
+
+    sys_ffmpeg = shutil.which(f"ffmpeg{paths.BIN_EXT}") or shutil.which("ffmpeg")
+    sys_ffprobe = shutil.which(f"ffprobe{paths.BIN_EXT}") or shutil.which("ffprobe")
+    if sys_ffmpeg and sys_ffprobe:
+        paths.FFMPEG_BIN = Path(sys_ffmpeg)
+        paths.FFPROBE_BIN = Path(sys_ffprobe)
+        manifest.record("ffmpeg", "system", paths.FFMPEG_BIN)
+        return True
+
+    if bar:
+        bar.update(0, label=_("ffmpeg/ffprobe not found, downloading..."))
+    else:
+        status(_("ffmpeg/ffprobe not found locally or on system."), "WARN")
+
+    url = FFMPEG_RELEASE_URLS().get(paths.OS_NAME)
+    if not url:
+        if not auto_yes:
+            _show_manual_install_hint("ffmpeg")
+        return False
+
+    if not auto_yes and not ask_yes_no(_("Download ffmpeg now?"), default=True):
+        _show_manual_install_hint("ffmpeg")
+        return False
+
+    if download_and_extract(url, paths._FFMPEG_DIR, "ffmpeg", bar=bar):
+        _relocate_ffmpeg_binaries(paths._FFMPEG_DIR)
+        if paths.FFMPEG_BIN.is_file():
+            manifest.record("ffmpeg", "downloaded", paths.FFMPEG_BIN)
+        return True
+
+    if not auto_yes:
+        status(_("Could not download ffmpeg."), "ERROR")
+        _show_manual_install_hint("ffmpeg")
+    return False
+
+
 def ensure_rife(auto_yes=False, bar=None):
+    from . import manifest
+
     rife_bin = paths.RIFE_BIN
     if rife_bin.is_file():
+        if manifest.is_installed("rife") and manifest.verify("rife", rife_bin):
+            return True
         _maybe_chmod(rife_bin)
+        manifest.record("rife", "local", rife_bin)
         return True
+
     sys_rife = shutil.which(f"rife-ncnn-vulkan{paths.BIN_EXT}") or shutil.which("rife-ncnn-vulkan")
     if sys_rife:
         paths.RIFE_BIN = Path(sys_rife)
         _maybe_chmod(Path(sys_rife))
+        manifest.record("rife", "system", paths.RIFE_BIN)
         return True
+
     if bar:
         bar.update(0, label=_("rife-ncnn-vulkan not found, downloading..."))
     else:
         status(_("rife-ncnn-vulkan not found locally or on system."), "WARN")
+
     url = RIFE_RELEASE_URLS().get(paths.OS_NAME)
-    if url and (auto_yes or ask_yes_no(_("Download rife-ncnn-vulkan now? (~400 MB)"), default=True)):
-        ok = download_and_extract(url, paths._RIFE_DIR, "rife-ncnn-vulkan", bar=bar)
-        if not ok:
-            if not auto_yes:
-                status(_("Could not download rife-ncnn-vulkan."), "ERROR")
-                import sys
-                sys.exit(1)
-            return False
-        if rife_bin.is_file():
-            _maybe_chmod(rife_bin)
-            return True
-        for f in paths._RIFE_DIR.rglob(f"rife-ncnn-vulkan{paths.BIN_EXT}"):
-            _maybe_chmod(f)
-            shutil.move(str(f), str(rife_bin))
-            break
-        if rife_bin.is_file():
-            _maybe_chmod(rife_bin)
-            return True
+    if not url:
+        if not auto_yes:
+            _show_manual_install_hint("rife-ncnn-vulkan")
+        return False
+
+    if not auto_yes and not ask_yes_no(_("Download rife-ncnn-vulkan now? (~400 MB)"), default=True):
+        _show_manual_install_hint("rife-ncnn-vulkan")
+        return False
+
+    ok = download_and_extract(url, paths._RIFE_DIR, "rife-ncnn-vulkan", bar=bar)
+    if not ok:
+        if not auto_yes:
+            status(_("Could not download rife-ncnn-vulkan."), "ERROR")
+            _show_manual_install_hint("rife-ncnn-vulkan")
+        return False
+
+    if rife_bin.is_file():
+        _maybe_chmod(rife_bin)
+        manifest.record("rife", "downloaded", rife_bin)
+        return True
+
+    for f in paths._RIFE_DIR.rglob(f"rife-ncnn-vulkan{paths.BIN_EXT}"):
+        _maybe_chmod(f)
+        shutil.move(str(f), str(rife_bin))
+        break
+
+    if rife_bin.is_file():
+        _maybe_chmod(rife_bin)
+        manifest.record("rife", "downloaded", rife_bin)
+        return True
+
     if not auto_yes:
         status(
             _("rife-ncnn-vulkan must be placed manually in:") + f"\n  {rife_bin}\n"
             + _("Download from: https://github.com/nihui/rife-ncnn-vulkan/releases"),
-            "ERROR"
+            "ERROR",
         )
-        import sys
-        sys.exit(1)
     return False
+
+
+def _show_manual_install_hint(tool):
+    if "ffmpeg" in tool:
+        dest = paths._FFMPEG_DIR
+        if paths.OS_NAME == "macos":
+            hint = _("Install via: brew install ffmpeg")
+        else:
+            hint = _("Download from: https://johnvansickle.com/ffmpeg/")
+    else:
+        dest = paths._RIFE_DIR
+        hint = _("Download from: https://github.com/nihui/rife-ncnn-vulkan/releases")
+    status(
+        _("{tool} must be placed manually in:").format(tool=tool) + f"\n  {dest}\n" + hint,
+        "ERROR",
+    )
