@@ -76,6 +76,28 @@ def _validation_pair_indexes(frame_count, sample_count=5):
     return sorted({round(last * i / (sample_count - 1)) for i in range(sample_count)})
 
 
+def _validate_generated_sequence(out_frames_dir, expected_count, sample_count=9):
+    """Require a complete, contiguous and decodable generated frame sequence."""
+    frames = sorted(Path(out_frames_dir).glob("*.png"))
+    if len(frames) != expected_count or not frames:
+        return False
+    for index, frame in enumerate(frames, 1):
+        if frame.name != f"{index:08d}.png":
+            return False
+    last = len(frames) - 1
+    indexes = sorted({round(last * i / max(1, sample_count - 1)) for i in range(sample_count)})
+    decoded_size = None
+    for index in indexes:
+        decoded = _decode_rgb_frame(frames[index])
+        if not decoded:
+            return False
+        if decoded_size is None:
+            decoded_size = len(decoded)
+        elif len(decoded) != decoded_size:
+            return False
+    return True
+
+
 def _validate_rife_backend(in_frames_dir, model, gpu_id, uhd=False):
     """Interpolate distributed frame pairs before committing to a long run."""
     inputs = sorted(Path(in_frames_dir).glob("*.png"))
@@ -122,7 +144,7 @@ def _build_ffmpeg_fallback_command(
         "me_mode=bilat:vsbmc=0"
     )
     return [
-        str(paths.FFMPEG_BIN), "-y", "-hide_banner", "-loglevel", "error",
+        str(paths.FFMPEG_BIN), "-y", "-hide_banner", "-loglevel", "error", "-xerror",
         "-framerate", source_rate, "-start_number", "1",
         "-i", str(Path(in_frames_dir) / "%08d.png"),
         "-vf", motion_filter,
@@ -134,14 +156,12 @@ def _build_ffmpeg_fallback_command(
 def run_interpolation(
     in_frames_dir, out_frames_dir, model, threads,
     source_frame_count, source_fps, target_fps,
-    gpu_id=None, gpu_name=None, uhd=False, tile_size=0, rife_cpu=False,
+    gpu_id=None, gpu_name=None, uhd=False, rife_cpu=False,
     progress_cb=None
 ):
     supports_n = _model_supports_custom_frame_count(model)
     if supports_n:
-        target_frame_count = max(
-            source_frame_count, round(source_frame_count * (target_fps / source_fps))
-        )
+        target_frame_count = max(1, round(source_frame_count * (target_fps / source_fps)))
         actual_output_fps = source_fps * (target_frame_count / source_frame_count)
     else:
         target_frame_count = source_frame_count * 2
@@ -151,9 +171,11 @@ def run_interpolation(
             status(f"{_('Output will be at')} {actual_output_fps:.3f} fps {_('instead.')}", "WARN")
 
     selected_gpu = -1 if rife_cpu else (gpu_id if gpu_id is not None else 0)
-    gpu_validation_failed = False
     use_ffmpeg_fallback = False
-    if selected_gpu != -1 and _gpu_requires_safe_fallback(gpu_name):
+    if target_fps <= source_fps:
+        status(_("Target FPS is not higher than the source; using safe FFmpeg conversion."), "WARN")
+        use_ffmpeg_fallback = True
+    elif selected_gpu != -1 and _gpu_requires_safe_fallback(gpu_name):
         status(
             _("AMD Vulkan on Linux is using the safe optical-flow backend to prevent corrupt frames."),
             "WARN",
@@ -161,19 +183,17 @@ def run_interpolation(
         use_ffmpeg_fallback = True
     elif not _validate_rife_backend(in_frames_dir, model, selected_gpu, uhd=uhd):
         if selected_gpu == -1:
-            status(_("RIFE output validation failed on CPU."), "ERROR")
-            return 0
-        status(
-            _("GPU interpolation produced invalid frames; using safe optical-flow fallback."),
-            "WARN",
-        )
-        gpu_validation_failed = True
+            status(_("RIFE output validation failed on CPU; using safe optical-flow fallback."), "WARN")
+        else:
+            status(
+                _("GPU interpolation produced invalid frames; using safe optical-flow fallback."),
+                "WARN",
+            )
         use_ffmpeg_fallback = True
 
     if use_ffmpeg_fallback:
         status(
-            _("The Vulkan driver is incompatible with this RIFE model. "
-              "FFmpeg motion interpolation will be slower but will not corrupt frames."),
+            _("Using FFmpeg motion interpolation. It will be slower but avoids corrupt frames."),
             "WARN",
         )
         cmd = _build_ffmpeg_fallback_command(
@@ -182,8 +202,7 @@ def run_interpolation(
         )
         actual_output_fps = target_fps
     elif rife_cpu:
-        if not gpu_validation_failed:
-            status(_("Integrated GPU cannot handle this resolution; using CPU instead."), "WARN")
+        status(_("Integrated GPU cannot handle this resolution; using CPU instead."), "WARN")
         status(_("This will be slower. A dedicated GPU is recommended for large videos."), "WARN")
         cpu_threads = f"1:{min(os.cpu_count() or 4, 4)}:{min(os.cpu_count() or 4, 4)}"
         cmd = [
@@ -237,6 +256,8 @@ def run_interpolation(
         output_lines.append(line.rstrip())
 
     process.wait()
+    if process.stdout:
+        process.stdout.close()
     stop_event.set()
     watcher.join()
     if not progress_cb:
@@ -246,9 +267,15 @@ def run_interpolation(
         status(_("Interpolation completed with error."), "ERROR")
         for line in output_lines[-20:]:
             status(f"    {line}", "ERROR")
-        sys.exit(1)
+        return 0
 
     result_frames = count_files(out_frames_dir, "*.png")
+    if not _validate_generated_sequence(out_frames_dir, target_frame_count):
+        status(
+            _("Interpolation output is incomplete, non-contiguous, or undecodable."),
+            "ERROR",
+        )
+        return 0
     if not progress_cb:
         print(f"{Color.ok(_('[✓]'))} {_('Interpolation complete:')} {Color.bold(str(result_frames))} {_('frames generated')}", flush=True)
     return actual_output_fps

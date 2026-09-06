@@ -1,5 +1,6 @@
 import argparse
 import atexit
+import math
 import shutil
 import sys
 from pathlib import Path
@@ -40,7 +41,11 @@ def prompt_for_video():
         videos_dir.mkdir(parents=True, exist_ok=True)
 
     video_files = [f for f in videos_dir.iterdir() if f.is_file()]
-    video_files = [f for f in video_files if f.suffix.lower() in ('.mp4', '.mkv', '.avi', '.mov', '.webm', '.flv')]
+    video_extensions = {
+        '.mp4', '.m4v', '.mkv', '.avi', '.mov', '.webm', '.flv', '.wmv',
+        '.mpg', '.mpeg', '.ts', '.mts', '.m2ts', '.ogv', '.3gp', '.vob',
+    }
+    video_files = [f for f in video_files if f.suffix.lower() in video_extensions]
 
     term_w = shutil.get_terminal_size().columns
 
@@ -406,12 +411,20 @@ def parse_args():
     return parser.parse_args()
 
 
+def _valid_cli_target_fps(value):
+    return math.isfinite(value) and 0 < value <= 1000
+
+
 def main_cli(args):
     from .deps import ensure_ffmpeg, ensure_rife
-    from .models import ensure_default_model
+    from .models import ensure_default_model, install_model
     if args.config:
         _run_settings()
         return
+
+    if not _valid_cli_target_fps(args.target_fps):
+        status(_("Target FPS must be a finite number greater than 0 and no higher than 1000."), "ERROR")
+        return False
 
     input_path = Path(args.input).expanduser().resolve()
     if not input_path.exists():
@@ -419,7 +432,8 @@ def main_cli(args):
         sys.exit(1)
 
     auto = args.yes or not sys.stdout.isatty()
-    ensure_ffmpeg(auto_yes=auto)
+    if not ensure_ffmpeg(auto_yes=auto):
+        return False
     ensure_rife(auto_yes=auto)
     ensure_default_model(auto_yes=auto)
     info = probe_video_file(input_path)
@@ -440,7 +454,7 @@ def main_cli(args):
     if output_path.exists() and not args.yes:
         if not ask_yes_no(f"{_('Already exists:')} {output_path.name}. {_('Overwrite?')}"):
             status(_("Output file exists. Skipped."), "WARN")
-            return False
+            return True
 
     return run_pipeline(
         info,
@@ -455,7 +469,7 @@ def main():
     from .config import load_config
     from .i18n import load_translations
     from .deps import ensure_ffmpeg, ensure_rife
-    from .models import ensure_default_model
+    from .models import ensure_default_model, install_model
     from .paths import ensure_dirs, any_dep_missing
     from .progress import DependencyBar
 
@@ -508,17 +522,25 @@ def main():
                     sys.stdout.write(" " * logo_pad + _gradient_line(line) + "\n")
                 sys.stdout.write("\n\n")
             bar = DependencyBar(_("Installing dependencies"))
-            ok = True
-            if not ensure_ffmpeg(auto_yes=True, bar=bar):
-                ok = False
-            if not ensure_rife(auto_yes=True, bar=bar):
-                ok = False
-            if ok:
+            ffmpeg_ok = ensure_ffmpeg(auto_yes=True, bar=bar)
+            ensure_rife(auto_yes=True, bar=bar)
+            if ffmpeg_ok:
                 bar.ok(_("All dependencies ready"))
             else:
-                bar.fail(_("Some dependencies could not be installed"))
+                bar.fail(_("ffmpeg/ffprobe could not be installed"))
                 sys.exit(1)
             ensure_default_model(auto_yes=True)
+
+    # Verify already-installed local dependencies before the interactive menu
+    # can execute them. Missing optional RIFE/model data may safely fall back.
+    if paths.FFMPEG_BIN.is_file() and paths.FFPROBE_BIN.is_file():
+        if not ensure_ffmpeg(auto_yes=True):
+            sys.exit(1)
+    if paths.RIFE_BIN.is_file():
+        ensure_rife(auto_yes=True)
+    default_model_dir = paths.MODELS_DIR / "rife-v4.6"
+    if default_model_dir.is_dir():
+        install_model("rife-v4.6")
 
     args = parse_args()
 
@@ -531,6 +553,7 @@ def main():
         return
 
     if args.input:
-        main_cli(args)
+        if main_cli(args) is False:
+            sys.exit(1)
     else:
         interactive_wizard()

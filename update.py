@@ -162,6 +162,11 @@ def update(info):
         shutil.rmtree(extract_dir, ignore_errors=True)
         return False
 
+    for launcher in ("start.sh", "start.command"):
+        launcher_path = extract_dir / launcher
+        if launcher_path.is_file():
+            launcher_path.chmod(launcher_path.stat().st_mode | 0o111)
+
     _print("Migrating your data...")
     for item in ("videos", "config.json", "config", "deps", "models"):
         src = base / item
@@ -177,8 +182,11 @@ def update(info):
                     shutil.copytree(src, dst)
                 else:
                     shutil.copy2(src, dst)
-            except Exception:
-                pass
+            except Exception as exc:
+                _print(f"Error migrating user data '{src.name}': {exc}")
+                shutil.rmtree(temp_dir, ignore_errors=True)
+                shutil.rmtree(extract_dir, ignore_errors=True)
+                return False
 
     _print("Preparing swap...")
     script = create_swap_script(base, extract_dir)

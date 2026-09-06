@@ -103,6 +103,15 @@ def _get_pix_fmt_filter(info):
     return "format=rgb24"
 
 
+def _get_extraction_filter(info):
+    """Normalize presentation timestamps to CFR before the PNG sequence loses them."""
+    filters = []
+    if info and info.get("fps", 0) > 0:
+        filters.append(f"fps={info['fps']:.12g}")
+    filters.append(_get_pix_fmt_filter(info))
+    return ",".join(value for value in filters if value)
+
+
 def extract_frames(video_path, frames_dir, info=None, gpu_settings=None, progress_cb=None):
     if info:
         w = max(info.get("width", 1920), 1920)
@@ -117,14 +126,16 @@ def extract_frames(video_path, frames_dir, info=None, gpu_settings=None, progres
 
     ffmpeg_bin = _resolve_ffmpeg_bin()
 
-    pix_fmt_filter = _get_pix_fmt_filter(info)
+    pix_fmt_filter = _get_extraction_filter(info)
 
     cmd = [
-        ffmpeg_bin, "-y",
+        ffmpeg_bin, "-y", "-hide_banner", "-v", "error", "-xerror",
         "-threads", "auto",
         "-i", str(video_path),
-        *_get_fps_mode_args(),
     ]
+    if info and info.get("video_stream_index") is not None:
+        cmd += ["-map", f"0:{int(info['video_stream_index'])}"]
+    cmd += _get_fps_mode_args()
     if pix_fmt_filter:
         cmd += ["-vf", pix_fmt_filter]
     cmd += ["-compression_level", "1", str(frames_dir / "%08d.png")]
@@ -155,7 +166,7 @@ def extract_frames(video_path, frames_dir, info=None, gpu_settings=None, progres
         status(_("ffmpeg not found. Install dependencies first."), "ERROR")
         return 0
 
-# Fallback for FFmpeg version mismatch (vsync vs fps_mode)
+    # Fallback for FFmpeg version mismatch (vsync vs fps_mode)
     if result.returncode != 0 and "Unrecognized option" in (result.stderr or ""):
         err = result.stderr.lower()
         fallback = None
@@ -165,11 +176,13 @@ def extract_frames(video_path, frames_dir, info=None, gpu_settings=None, progres
             fallback = ["-fps_mode", "passthrough"]
         if fallback:
             cmd_fallback = [
-                ffmpeg_bin, "-y",
+                ffmpeg_bin, "-y", "-hide_banner", "-v", "error", "-xerror",
                 "-threads", "auto",
                 "-i", str(video_path),
-                *fallback,
             ]
+            if info and info.get("video_stream_index") is not None:
+                cmd_fallback += ["-map", f"0:{int(info['video_stream_index'])}"]
+            cmd_fallback += fallback
             if pix_fmt_filter:
                 cmd_fallback += ["-vf", pix_fmt_filter]
             cmd_fallback += ["-compression_level", "1", str(frames_dir / "%08d.png")]
@@ -182,12 +195,10 @@ def extract_frames(video_path, frames_dir, info=None, gpu_settings=None, progres
 
     if result.returncode != 0:
         status(f"{_('Error extracting frames:')}\n{result.stderr[-2000:]}", "ERROR")
-        import sys
-        sys.exit(1)
+        return 0
 
     extracted = count_files(frames_dir, "*.png")
     if extracted == 0:
         status(_("No frames extracted. Aborting."), "ERROR")
-        import sys
-        sys.exit(1)
+        return 0
     return extracted

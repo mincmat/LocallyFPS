@@ -82,9 +82,16 @@ def install_model(model_name):
     model_dir = paths.MODELS_DIR / model_name
     if model_dir.is_dir():
         if manifest.is_installed(model_name):
+            if manifest.verify_dir(model_name, model_dir):
+                return True
+            status(
+                f"{_('Model')} {model_name} {_('failed its SHA-256 integrity check.')}",
+                "ERROR",
+            )
+            manifest.quarantine(model_dir)
+        else:
+            manifest.record_dir(model_name, model_name, model_dir)
             return True
-        manifest.record_dir(model_name, model_name, model_dir)
-        return True
 
     extract_dir = _ensure_rife_release_cached()
     if not extract_dir:

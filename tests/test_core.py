@@ -1,5 +1,6 @@
 import io
 import json
+import math
 import shutil
 import subprocess
 import tarfile
@@ -9,19 +10,31 @@ import zipfile
 from pathlib import Path
 from unittest import mock
 
-from core import paths
+from core import manifest, paths
 from core.deps import safe_extract_tar, safe_extract_zip
-from core.extract import _get_pix_fmt_filter, extract_frames
+from core.disk import estimate_frame_storage, estimate_pipeline_storage
+from core.extract import _get_extraction_filter, _get_pix_fmt_filter, extract_frames
 from core.interpolate import (
     _build_ffmpeg_fallback_command,
     _gpu_requires_safe_fallback,
     _interpolated_frame_is_plausible,
+    _validate_generated_sequence,
     _validation_pair_indexes,
+    run_interpolation,
 )
 from core.probe import probe_video_file
-from core.reassemble import _build_encode_command, _encoder_args, _validate_output
-from core.update_utils import parse_version
+from core.reassemble import (
+    _build_encode_command,
+    _compatible_output,
+    _build_video_filter,
+    _encoder_args,
+    _output_color_info,
+    _validate_output,
+    reassemble_video,
+)
+from core.update_utils import create_swap_script, parse_version
 from core.updater import UpdateCheckError, check_for_updates
+from core.wizard import _valid_cli_target_fps
 
 
 class EncoderTests(unittest.TestCase):
@@ -49,6 +62,82 @@ class EncoderTests(unittest.TestCase):
         self.assertEqual(parse_version("v3.1"), (3, 1, 0))
         self.assertEqual(parse_version("3.1.2"), (3, 1, 2))
 
+    def test_hdr_output_metadata_matches_tonemapped_sdr(self):
+        info = {
+            "color_primaries": "bt2020", "color_space": "bt2020nc",
+            "color_transfer": "smpte2084", "color_range": "tv",
+            "subtitle_streams": [],
+        }
+        normalized = _output_color_info(info)
+        self.assertEqual(normalized["color_primaries"], "bt709")
+        self.assertEqual(normalized["color_space"], "bt709")
+        self.assertEqual(normalized["color_transfer"], "bt709")
+        self.assertEqual(info["color_transfer"], "smpte2084")
+
+    def test_rgb_input_metadata_is_normalized_for_yuv_encoders(self):
+        normalized = _output_color_info({
+            "color_space": "gbr", "color_range": "pc",
+            "color_primaries": None, "color_transfer": None,
+        })
+        self.assertEqual(normalized["color_space"], "bt709")
+        self.assertEqual(normalized["color_transfer"], "bt709")
+        self.assertEqual(normalized["color_range"], "tv")
+
+    def test_incompatible_mp4_subtitles_force_lossless_mkv_container(self):
+        info = {"subtitle_streams": [{"index": 2, "codec": "hdmv_pgs_subtitle"}]}
+        result = _compatible_output("libx264", Path("output.mp4"), info)
+        self.assertEqual(result, Path("output.mkv"))
+
+    def test_encoder_filter_handles_odd_dimensions_and_preserves_sar(self):
+        value = _build_video_filter("libx264", {
+            "sample_aspect_ratio": "16:15", "color_space": "bt709",
+            "color_primaries": "bt709", "color_transfer": "bt709",
+            "color_range": "tv",
+        })
+        self.assertIn("pad=ceil(iw/2)*2:ceil(ih/2)*2", value)
+        self.assertIn("setsar=ratio=16/15", value)
+        self.assertIn("setparams=color_primaries=bt709", value)
+        self.assertIn("range=limited", value)
+        vaapi = _build_video_filter("h264_vaapi", {})
+        self.assertTrue(vaapi.endswith("format=nv12,hwupload"))
+
+    @mock.patch("core.reassemble._run_ffmpeg", return_value=(1, "encoder failed", None))
+    @mock.patch("core.reassemble._detect_available_encoders", return_value=["libx264"])
+    @mock.patch(
+        "core.reassemble._pick_best_encoder",
+        return_value={"codec": "libx264", "pix_fmt": "yuv420p", "hwaccel": None},
+    )
+    def test_failed_export_does_not_destroy_existing_output(self, _pick, _detect, _run):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            output = root / "output.mp4"
+            output.write_bytes(b"existing video")
+            result = reassemble_video(
+                root, root / "input.mp4", 60, False, output, 60,
+                info={"audio_tracks": 0, "subtitle_streams": []},
+            )
+            self.assertIsNone(result)
+            self.assertEqual(output.read_bytes(), b"existing video")
+            self.assertEqual(list(root.glob("*.locallyfps-*")), [])
+
+
+class InputValidationTests(unittest.TestCase):
+    def test_cli_target_fps_rejects_non_finite_and_out_of_range_values(self):
+        for value in (0, -1, math.nan, math.inf, -math.inf, 1000.1):
+            self.assertFalse(_valid_cli_target_fps(value))
+        for value in (1, 23.976, 60, 1000):
+            self.assertTrue(_valid_cli_target_fps(value))
+
+
+class DiskEstimateTests(unittest.TestCase):
+    def test_frame_estimate_is_safe_for_incompressible_rgb(self):
+        raw_size = 1920 * 1080 * 3 * 100
+        self.assertGreaterEqual(estimate_frame_storage(1920, 1080, 100), raw_size)
+
+    def test_pipeline_estimate_includes_source_and_generated_frames(self):
+        estimate = estimate_pipeline_storage(100, 100, 30, 30, 60)
+        self.assertEqual(estimate, estimate_frame_storage(100, 100, 90))
+
 
 class UpdateCheckTests(unittest.TestCase):
     @mock.patch("core.updater.urllib.request.urlopen", side_effect=OSError("offline"))
@@ -75,6 +164,16 @@ class UpdateCheckTests(unittest.TestCase):
 
         self.assertEqual(result[0], "v3.2.0")
         self.assertEqual(result[2], "LocallyFPS_Linux_v3.2.zip")
+
+    @mock.patch("core.update_utils.sys.platform", "linux")
+    def test_posix_update_swap_keeps_backup_and_has_rollback(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            script = create_swap_script(root / "Locally FPS", root / "Locally FPS_update")
+            content = script.read_text()
+            self.assertIn("if ! mv --", content)
+            self.assertIn("Locally FPS.old", content)
+            self.assertIn("mv -- 'Locally FPS.old' 'Locally FPS'", content)
 
 
 class InterpolationValidationTests(unittest.TestCase):
@@ -117,12 +216,23 @@ class InterpolationValidationTests(unittest.TestCase):
         second = bytes([30, 40, 50]) * 100
         self.assertFalse(_interpolated_frame_is_plausible(first, second, first))
 
+    @mock.patch("core.interpolate._decode_rgb_frame", return_value=b"rgb")
+    def test_generated_sequence_must_be_complete_and_contiguous(self, _decode):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            for index in range(1, 4):
+                (root / f"{index:08d}.png").touch()
+            self.assertTrue(_validate_generated_sequence(root, 3))
+            (root / "00000002.png").rename(root / "00000004.png")
+            self.assertFalse(_validate_generated_sequence(root, 3))
+
 
 class ExtractionTests(unittest.TestCase):
     def setUp(self):
-        ffmpeg = shutil.which("ffmpeg")
-        ffprobe = shutil.which("ffprobe")
-        if not ffmpeg or not ffprobe:
+        repo_root = Path(__file__).resolve().parent.parent
+        ffmpeg = shutil.which("ffmpeg") or str(repo_root / "deps" / "ffmpeg" / "ffmpeg")
+        ffprobe = shutil.which("ffprobe") or str(repo_root / "deps" / "ffmpeg" / "ffprobe")
+        if not Path(ffmpeg).is_file() or not Path(ffprobe).is_file():
             self.skipTest("ffmpeg/ffprobe not installed")
         paths.FFMPEG_BIN = Path(ffmpeg)
         paths.FFPROBE_BIN = Path(ffprobe)
@@ -131,6 +241,11 @@ class ExtractionTests(unittest.TestCase):
         value = _get_pix_fmt_filter({"color_transfer": "smpte2084"})
         self.assertIn(",tonemap=tonemap=hable", value)
         self.assertNotIn("zscale=p=bt709:tonemap", value)
+
+    def test_timestamps_are_normalized_before_frame_extraction(self):
+        value = _get_extraction_filter({"is_vfr": False, "fps": 24000 / 1001})
+        self.assertIn("fps=23.976", value)
+        self.assertTrue(value.endswith("format=rgb24"))
 
     def test_hevc_10bit_hdr_extraction(self):
         encoders = subprocess.run(
@@ -191,6 +306,9 @@ class ExtractionTests(unittest.TestCase):
                 "-i", "sine=frequency=880:duration=1", "-map", "0:v", "-map", "1:a",
                 "-map", "2:a", "-c:v", "libx264", "-c:a", "aac", str(original),
             ], check=True)
+            info = probe_video_file(original)
+            self.assertTrue(info["has_audio"])
+            self.assertEqual(info["audio_tracks"], 2)
             subprocess.run([
                 str(paths.FFMPEG_BIN), "-v", "error", "-y", "-i", str(original),
                 str(frames / "%08d.png"),
@@ -198,7 +316,7 @@ class ExtractionTests(unittest.TestCase):
             enc = {"codec": "libx264", "pix_fmt": "yuv420p", "hwaccel": None}
             cmd = _build_encode_command(
                 enc, frames, original, 2, output, True, 1.0, 18, "fast",
-                {"subtitle_streams": []},
+                info,
             )
             subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
             result = subprocess.run([
@@ -206,6 +324,48 @@ class ExtractionTests(unittest.TestCase):
                 "-show_entries", "stream=index", "-of", "csv=p=0", str(output),
             ], capture_output=True, text=True, check=True)
             self.assertEqual(len(result.stdout.strip().splitlines()), 2)
+            self.assertTrue(_validate_output(
+                output, expected_fps=2, expected_frames=2,
+                expected_duration=1.0, expected_audio_tracks=2,
+            ))
+
+    @mock.patch("core.interpolate._gpu_requires_safe_fallback", return_value=True)
+    def test_safe_backend_end_to_end_keeps_audio_and_exact_fps(self, _fallback):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            original = root / "original.mkv"
+            in_frames = root / "in"
+            out_frames = root / "out"
+            output = root / "output.mkv"
+            in_frames.mkdir()
+            out_frames.mkdir()
+            subprocess.run([
+                str(paths.FFMPEG_BIN), "-v", "error", "-y", "-f", "lavfi",
+                "-i", "testsrc2=size=64x64:rate=6:duration=1", "-f", "lavfi",
+                "-i", "sine=frequency=440:duration=1", "-map", "0:v", "-map", "1:a",
+                "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", str(original),
+            ], check=True)
+            info = probe_video_file(original)
+            source_count = extract_frames(
+                original, in_frames, info, progress_cb=lambda _: None,
+            )
+            actual_fps = run_interpolation(
+                in_frames, out_frames, "rife-v4.6", "1:1:1",
+                source_count, info["fps"], 12, gpu_id=0, gpu_name="test",
+                progress_cb=lambda _: None,
+            )
+            result_frames = len(list(out_frames.glob("*.png")))
+            self.assertEqual(actual_fps, 12)
+            self.assertEqual(result_frames, 12)
+            final = reassemble_video(
+                out_frames, original, actual_fps, True, output, result_frames,
+                encoder_name="libx264", info=info, progress_cb=lambda _: None,
+            )
+            self.assertEqual(final, output)
+            self.assertTrue(_validate_output(
+                output, expected_fps=12, expected_frames=12,
+                expected_duration=1.0, expected_audio_tracks=1,
+            ))
 
 
 class ProbeTests(unittest.TestCase):
@@ -227,8 +387,39 @@ class ProbeTests(unittest.TestCase):
         self.assertAlmostEqual(info["fps"], 24000 / 1001)
         self.assertEqual(run.call_count, 1)
 
+    @mock.patch("core.probe.subprocess.run")
+    def test_audio_and_subtitles_are_detected_alongside_video(self, run):
+        payload = {
+            "streams": [
+                {"index": 0, "codec_type": "video", "codec_name": "h264",
+                 "width": 10, "height": 10, "avg_frame_rate": "30/1",
+                 "r_frame_rate": "30/1", "nb_frames": "30",
+                 "sample_aspect_ratio": "1:1"},
+                {"index": 1, "codec_type": "audio", "codec_name": "aac"},
+                {"index": 2, "codec_type": "subtitle", "codec_name": "subrip"},
+            ],
+            "format": {"duration": "1", "size": "100"},
+        }
+        run.return_value = subprocess.CompletedProcess([], 0, json.dumps(payload), "")
+        with tempfile.TemporaryDirectory() as temp:
+            video = Path(temp) / "video.mkv"
+            video.touch()
+            info = probe_video_file(video)
+        self.assertTrue(info["has_audio"])
+        self.assertEqual(info["audio_tracks"], 1)
+        self.assertEqual(info["video_stream_index"], 0)
+        self.assertEqual(info["subtitle_streams"], [{"index": 2, "codec": "subrip"}])
+
 
 class ArchiveSafetyTests(unittest.TestCase):
+    def test_integrity_failure_is_quarantined_without_deletion(self):
+        with tempfile.TemporaryDirectory() as temp:
+            original = Path(temp) / "dependency.bin"
+            original.write_bytes(b"recoverable")
+            quarantined = manifest.quarantine(original)
+            self.assertFalse(original.exists())
+            self.assertEqual(quarantined.read_bytes(), b"recoverable")
+
     def test_zip_traversal_is_rejected(self):
         with tempfile.TemporaryDirectory() as temp:
             archive = Path(temp) / "bad.zip"

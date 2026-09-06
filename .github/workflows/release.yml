@@ -13,6 +13,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: install FFmpeg test dependency
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
       - name: resolve release tag
         run: echo "RELEASE_TAG=${GITHUB_REF_NAME#release-}" >> "$GITHUB_ENV"
       - name: test

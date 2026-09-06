@@ -2,6 +2,7 @@
 
 import os
 import re
+import shlex
 import sys
 from pathlib import Path
 
@@ -69,22 +70,34 @@ def create_swap_script(old_dir, new_dir):
             f"ping -n 2 127.0.0.1 >nul\r\n"
             f'rmdir /s /q "{old_name}.old" 2>nul\r\n'
             f'move /Y "{old_name}" "{old_name}.old"\r\n'
+            f'if errorlevel 1 exit /b 1\r\n'
             f'move /Y "{new_name}" "{old_name}"\r\n'
-            f'rmdir /s /q "{old_name}.old" 2>nul\r\n'
+            f'if errorlevel 1 (\r\n'
+            f'  move /Y "{old_name}.old" "{old_name}"\r\n'
+            f'  exit /b 1\r\n'
+            f')\r\n'
             f'start "" "cmd" /k echo Update complete! Run start.bat.\r\n'
             f'del "%~f0"\r\n'
         )
         script_path.write_text(content, encoding="ascii")
     else:
         script_path = parent_dir / "_lfps_swap.sh"
+        old_q = shlex.quote(old_name)
+        new_q = shlex.quote(new_name)
+        backup_q = shlex.quote(old_name + ".old")
+        script_q = shlex.quote(str(script_path))
+        launcher = "start.command" if sys.platform == "darwin" else "start.sh"
         content = (
-            "#!/usr/bin/env bash\n"
+            "#!/usr/bin/env bash\nset -u\n"
             "sleep 1\n"
-            f'rm -rf "{old_name}.old"\n'
-            f'mv "{old_name}" "{old_name}.old"\n'
-            f'mv "{new_name}" "{old_name}"\n'
-            f'echo "Update complete! Run start.sh."\n'
-            f'rm -f "{script_path}"\n'
+            f'if [ -e {backup_q} ]; then rm -rf -- {backup_q}; fi\n'
+            f'if ! mv -- {old_q} {backup_q}; then exit 1; fi\n'
+            f'if ! mv -- {new_q} {old_q}; then\n'
+            f'  mv -- {backup_q} {old_q}\n'
+            f'  exit 1\n'
+            f'fi\n'
+            f'echo "Update complete! Run {launcher}."\n'
+            f'rm -f -- {script_q}\n'
         )
         script_path.write_text(content)
         os.chmod(script_path, 0o755)

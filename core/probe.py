@@ -1,4 +1,5 @@
 import json
+import math
 import subprocess
 
 from . import paths
@@ -11,7 +12,8 @@ from .utils import format_duration, format_fps, human_size
 def _parse_fps(rate_str):
     try:
         num, den = rate_str.split("/")
-        return float(num) / float(den) if float(den) != 0 else 0.0
+        value = float(num) / float(den) if float(den) != 0 else 0.0
+        return value if math.isfinite(value) and value > 0 else 0.0
     except (ValueError, AttributeError, ZeroDivisionError):
         return 0.0
 
@@ -27,7 +29,7 @@ def _count_frames_real(video_path):
     ]
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
-    except FileNotFoundError:
+    except (FileNotFoundError, subprocess.TimeoutExpired):
         return 0
     try:
         return int(result.stdout.strip())
@@ -39,15 +41,17 @@ def probe_video_file(path):
 
     cmd = [
         str(paths.FFPROBE_BIN), "-v", "error",
-        "-select_streams", "v:0",
         "-show_format", "-show_streams",
         "-of", "json",
         str(path),
     ]
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
     except FileNotFoundError:
         status(_("ffmpeg/ffprobe not found. Install dependencies first."), "ERROR")
+        return None
+    except subprocess.TimeoutExpired:
+        status(_("Video probing timed out; the file may be damaged or unsupported."), "ERROR")
         return None
     if result.returncode != 0:
         return None
@@ -59,14 +63,24 @@ def probe_video_file(path):
         video_streams = [s for s in streams if s.get("codec_type") == "video"]
         if not video_streams:
             return None
-        stream = video_streams[0]
+        # Prefer the default real video stream over album art/attached pictures.
+        real_video_streams = [
+            s for s in video_streams
+            if not (s.get("disposition") or {}).get("attached_pic")
+        ] or video_streams
+        stream = next(
+            (s for s in real_video_streams if (s.get("disposition") or {}).get("default")),
+            real_video_streams[0],
+        )
         fmt = data.get("format", {})
 
         # avg_frame_rate reflects presentation rate; r_frame_rate may only be
         # the codec time base and is often misleading for VFR sources.
-        fps = _parse_fps(stream.get("avg_frame_rate", ""))
+        avg_fps = _parse_fps(stream.get("avg_frame_rate", ""))
+        nominal_fps = _parse_fps(stream.get("r_frame_rate", ""))
+        fps = avg_fps
         if fps <= 0:
-            fps = _parse_fps(stream.get("r_frame_rate", ""))
+            fps = nominal_fps
         if fps <= 0:
             fps = 30.0
             status(_("Detected FPS as 0 (VFR or unusual format). Assuming 30 fps."), "WARN")
@@ -78,10 +92,12 @@ def probe_video_file(path):
             else:
                 duration = float(fmt.get("duration", 0.0) or 0.0)
                 frame_count = int(fps * duration) if duration > 0 else 0
-        except (ValueError, TypeError):
+        except (ValueError, TypeError, OverflowError):
             frame_count = 0
 
         duration = float(fmt.get("duration", 0.0) or 0.0)
+        if not math.isfinite(duration) or duration < 0:
+            duration = 0.0
         if frame_count <= 0 and duration > 0:
             frame_count = int(fps * duration)
         if frame_count <= 0:
@@ -101,9 +117,18 @@ def probe_video_file(path):
             "extension": path.suffix.lower() or "(no extension)",
             "container": fmt.get("format_long_name", "unknown"),
             "codec": stream.get("codec_name", "unknown"),
-            "width": int(stream.get("width", 0)),
-            "height": int(stream.get("height", 0)),
+            "video_stream_index": int(stream.get("index", 0) or 0),
+            "width": max(0, int(stream.get("width", 0) or 0)),
+            "height": max(0, int(stream.get("height", 0) or 0)),
+            "sample_aspect_ratio": stream.get("sample_aspect_ratio"),
+            "display_aspect_ratio": stream.get("display_aspect_ratio"),
             "fps": fps,
+            "avg_fps": avg_fps,
+            "nominal_fps": nominal_fps,
+            "is_vfr": (
+                avg_fps > 0 and nominal_fps > 0
+                and abs(avg_fps - nominal_fps) > max(0.01, avg_fps * 0.001)
+            ),
             "frame_count": frame_count,
             "duration": duration,
             "size_bytes": int(fmt.get("size", 0) or 0),

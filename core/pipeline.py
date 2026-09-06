@@ -12,7 +12,7 @@ from .interpolate import run_interpolation
 from .models import install_model
 from .reassemble import reassemble_video
 from .temp import TempManager
-from .disk import estimate_frame_storage
+from .disk import estimate_pipeline_storage
 
 PRESETS = {
     "balanced": {"encoder": "libx264", "ffmpeg_preset": "veryfast", "crf": 20,
@@ -32,21 +32,25 @@ def run_pipeline(info, target_fps, output_path, gpu_settings, model=None, intera
         if not user_model:
             model = pv.get("model", model)
         rife_threads = config_rife_threads or pv.get("threads") or gpu_settings["threads"]
-        rife_tile_size = pv.get("tile_size") or gpu_settings.get("tile_size", 0)
     else:
         rife_threads = config_rife_threads or gpu_settings["threads"]
-        rife_tile_size = gpu_settings.get("tile_size", 0)
     model_dir = paths.MODELS_DIR / model
     if not model_dir.is_dir():
         status(f"{_('Model')} {model} {_('not found. Downloading...')}")
         if not install_model(model):
-            status(f"{_('Model')} {model} {_('is required but could not be installed.')}", "ERROR")
-            return False
+            status(
+                f"{_('Model')} {model} {_('could not be installed; the safe FFmpeg backend will be used.')}",
+                "WARN",
+            )
 
-    w = max(info.get("width", 1920), 1920)
-    h = max(info.get("height", 1080), 1080)
-    fc = max(info.get("frame_count", 18000) or int(info.get("fps", 30) * info.get("duration", 600)), 100)
-    estimated = estimate_frame_storage(w, h, fc)
+    w = max(info.get("width", 0), 1)
+    h = max(info.get("height", 0), 1)
+    fc = max(
+        info.get("frame_count", 0)
+        or int(info.get("fps", 30) * info.get("duration", 0)),
+        1,
+    )
+    estimated = estimate_pipeline_storage(w, h, fc, info.get("fps", 0), target_fps)
     tmp = TempManager(estimated_bytes=estimated)
 
     if interactive:
@@ -68,6 +72,10 @@ def run_pipeline(info, target_fps, output_path, gpu_settings, model=None, intera
         info["path"], tmp.in_frames_dir, info, gpu_settings,
         progress_cb=(lambda f: pb(f * 0.30, _("Extracting frames..."))) if pb else None,
     )
+    if frame_count <= 0:
+        tmp.cleanup()
+        status(_("Frame extraction failed."), "ERROR")
+        return False
 
     actual_fps = run_interpolation(
         in_frames_dir=tmp.in_frames_dir,
@@ -80,7 +88,6 @@ def run_pipeline(info, target_fps, output_path, gpu_settings, model=None, intera
         gpu_id=gpu_settings["gpu_id"],
         gpu_name=gpu_settings.get("gpu_name"),
         uhd=gpu_settings["uhd"],
-        tile_size=rife_tile_size,
         rife_cpu=gpu_settings.get("rife_cpu", False),
         progress_cb=(lambda f: pb(0.30 + f * 0.55, _("Interpolating..."))) if pb else None,
     )

@@ -72,6 +72,18 @@ def verify_dir(name: str, dir_path: Path) -> bool:
     return sha256_dir(dir_path) == info.get("sha256", "")
 
 
+def quarantine(path: Path) -> Path:
+    """Move an integrity-failed dependency aside without destroying it."""
+    path = Path(path)
+    candidate = path.with_name(path.name + ".integrity-failed")
+    index = 1
+    while candidate.exists():
+        candidate = path.with_name(f"{path.name}.integrity-failed-{index}")
+        index += 1
+    path.replace(candidate)
+    return candidate
+
+
 def sha256_file(path: Path) -> str:
     h = hashlib.sha256()
     with open(path, "rb") as f:

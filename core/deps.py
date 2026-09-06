@@ -167,11 +167,18 @@ def ensure_ffmpeg(auto_yes=False, bar=None):
     ffprobe_bin = paths.FFPROBE_BIN
 
     if ffmpeg_bin.is_file() and ffprobe_bin.is_file():
-        if manifest.is_installed("ffmpeg") and manifest.verify("ffmpeg", ffmpeg_bin):
+        integrity_failed = False
+        for name, binary in (("ffmpeg", ffmpeg_bin), ("ffprobe", ffprobe_bin)):
+            if manifest.is_installed(name):
+                if not manifest.verify(name, binary):
+                    status(f"{name} {_('failed its SHA-256 integrity check.')}", "ERROR")
+                    manifest.quarantine(binary)
+                    integrity_failed = True
+            else:
+                status(f"{name} {_('found but not in manifest, recording its SHA-256 hash.')}", "INFO")
+                manifest.record(name, "local", binary)
+        if not integrity_failed:
             return True
-        status(_("ffmpeg found but not in manifest, verifying..."), "INFO")
-        manifest.record("ffmpeg", "local", ffmpeg_bin)
-        return True
 
     sys_ffmpeg = shutil.which(f"ffmpeg{paths.BIN_EXT}") or shutil.which("ffmpeg")
     sys_ffprobe = shutil.which(f"ffprobe{paths.BIN_EXT}") or shutil.which("ffprobe")
@@ -179,6 +186,7 @@ def ensure_ffmpeg(auto_yes=False, bar=None):
         paths.FFMPEG_BIN = Path(sys_ffmpeg)
         paths.FFPROBE_BIN = Path(sys_ffprobe)
         manifest.record("ffmpeg", "system", paths.FFMPEG_BIN)
+        manifest.record("ffprobe", "system", paths.FFPROBE_BIN)
         return True
 
     if bar:
@@ -200,7 +208,9 @@ def ensure_ffmpeg(auto_yes=False, bar=None):
         _relocate_ffmpeg_binaries(paths._FFMPEG_DIR)
         if paths.FFMPEG_BIN.is_file():
             manifest.record("ffmpeg", "downloaded", paths.FFMPEG_BIN)
-        return True
+        if paths.FFPROBE_BIN.is_file():
+            manifest.record("ffprobe", "downloaded", paths.FFPROBE_BIN)
+        return paths.FFMPEG_BIN.is_file() and paths.FFPROBE_BIN.is_file()
 
     if not auto_yes:
         status(_("Could not download ffmpeg."), "ERROR")
@@ -213,11 +223,15 @@ def ensure_rife(auto_yes=False, bar=None):
 
     rife_bin = paths.RIFE_BIN
     if rife_bin.is_file():
-        if manifest.is_installed("rife") and manifest.verify("rife", rife_bin):
+        if manifest.is_installed("rife"):
+            if manifest.verify("rife", rife_bin):
+                return True
+            status(_("RIFE failed its SHA-256 integrity check; disabling it."), "ERROR")
+            manifest.quarantine(rife_bin)
+        else:
+            _maybe_chmod(rife_bin)
+            manifest.record("rife", "local", rife_bin)
             return True
-        _maybe_chmod(rife_bin)
-        manifest.record("rife", "local", rife_bin)
-        return True
 
     sys_rife = shutil.which(f"rife-ncnn-vulkan{paths.BIN_EXT}") or shutil.which("rife-ncnn-vulkan")
     if sys_rife:

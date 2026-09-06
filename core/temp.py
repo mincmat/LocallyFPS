@@ -18,7 +18,7 @@ class TempManager:
         cache_dir = paths.CACHE_DIR
         cache_dir.mkdir(parents=True, exist_ok=True)
         if estimated_bytes > 0:
-            check_disk_space(cache_dir, int(estimated_bytes * 1.5))
+            check_disk_space(cache_dir, int(estimated_bytes * 1.10))
         self.temp_root = Path(tempfile.mkdtemp(prefix="locallyfps_", dir=str(cache_dir)))
         self.in_frames_dir = self.temp_root / "in_frames"
         self.out_frames_dir = self.temp_root / "out_frames"

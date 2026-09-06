@@ -2,7 +2,7 @@
 
 AI-powered video frame interpolation — run entirely on your machine.
 
-LocallyFPS uses the **RIFE** (Real-Time Intermediate Flow Estimation) AI model to generate smooth, high-framerate video from any source. No cloud services, no subscriptions, no data leaving your PC.
+LocallyFPS uses the **RIFE** (Real-Time Intermediate Flow Estimation) AI model, with a safe FFmpeg optical-flow fallback, to generate smooth, high-framerate video from FFmpeg-decodable sources. No cloud services, no subscriptions, no data leaving your PC.
 
 <p align="center">
   <strong>24fps → 60fps</strong> · <strong>30fps → 120fps</strong> · <strong>any → any</strong>
@@ -15,7 +15,9 @@ LocallyFPS uses the **RIFE** (Real-Time Intermediate Flow Estimation) AI model t
 - **AI frame interpolation** using RIFE v4.6 via ncnn + Vulkan
 - **H.265/HEVC input support** with automatic pixel format conversion
 - **HDR tone mapping** — HDR10/HLG content is tone-mapped to SDR during extraction
-- **Color metadata preservation** — color space, range, and primaries are carried through to the output
+- **Correct color handling** — SDR metadata is preserved; tone-mapped HDR output is correctly tagged as SDR BT.709
+- **Audio and subtitle preservation** — all audio tracks and compatible subtitles are retained; MKV is selected when needed
+- **VFR normalization** — variable-timestamp sources are converted to a stable CFR timeline before interpolation
 - **Hardware-accelerated encoding** — NVENC, VAAPI, QSV, VideoToolbox with automatic fallback
 - **Validated GPU interpolation** — corrupt or duplicated Vulkan output is detected before a full run
 - **Safe optical-flow fallback** — incompatible GPU drivers automatically use motion-compensated FFmpeg interpolation
@@ -25,6 +27,7 @@ LocallyFPS uses the **RIFE** (Real-Time Intermediate Flow Estimation) AI model t
 - **CLI mode** for scripting and batch processing
 - **Zero dependencies to install manually** — ffmpeg and RIFE are auto-downloaded on first run
 - **Encoder fallback chain** — if your preferred encoder fails, it tries alternatives automatically
+- **Atomic validated exports** — existing outputs survive failures; FPS, frames, duration, audio and decoding are checked
 - **SHA-256 verification** for application updates and local dependency integrity
 
 ---
@@ -97,7 +100,7 @@ Input video (H.264, H.265, etc.)
 
 | Component | Details |
 |-----------|---------|
-| **GPU** | Any Vulkan-capable GPU (NVIDIA, AMD, Intel) or CPU fallback for integrated GPUs |
+| **GPU** | Optional. Vulkan enables RIFE; FFmpeg optical flow is used when RIFE is unavailable or unsafe |
 | **Vulkan driver** | NVIDIA proprietary recommended. Open-source drivers work too. |
 | **Python** | 3.10+ (only stdlib + optional `tqdm`) |
 | **Disk space** | Varies — the app estimates and warns before processing |
@@ -193,12 +196,12 @@ LocallyFPS/
 | H.265 (HEVC) | H.265 (HEVC) |
 | VP8/VP9 | H.264/H.265 |
 | MPEG-4 | H.264/H.265 |
-| AVI, MKV, MOV, and more | MP4, MKV |
+| AVI, MKV, MOV, WebM, FLV, WMV, MPEG-TS, MTS/M2TS, OGV, 3GP, VOB and more | MP4, MKV |
 
 H.265/HEVC input is fully supported with automatic:
 - Pixel format conversion (10-bit video to 8-bit RGB for RIFE-compatible PNG extraction)
 - HDR to SDR tone mapping (PQ/HLG transfer functions)
-- Color metadata preservation in the output
+- Correct SDR BT.709 tagging after HDR tone mapping
 
 ---
 
@@ -217,7 +220,7 @@ Install or update your GPU's Vulkan driver. On Linux: `vulkaninfo` should list y
 - If you have an integrated GPU, LocallyFPS will automatically use CPU for 2K+ resolutions
 
 **Out of disk space?**
-The app estimates required space before starting. Extraction needs roughly `width x height x 3 x frames x 0.4` bytes.
+The app conservatively reserves approximately raw RGB size for both the extracted and generated PNG sequences, plus safety overhead. Highly detailed or noisy videos can require very large temporary storage.
 
 **Model download fails?**
 The RIFE model (~400MB) is downloaded from GitHub Releases. Check your internet connection or download it manually and place it in `models/rife-v4.6/`.

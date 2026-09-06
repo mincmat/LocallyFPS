@@ -129,6 +129,11 @@ def _prepare_update(zip_path):
                 shutil.move(str(item), str(update_dir / item.name))
             inner.rmdir()
 
+    for launcher in ("start.sh", "start.command"):
+        launcher_path = update_dir / launcher
+        if launcher_path.is_file():
+            launcher_path.chmod(launcher_path.stat().st_mode | 0o111)
+
     for item in ("videos", "config.json", "config", "deps", "models"):
         src = current_dir / item
         dst = update_dir / item
@@ -143,8 +148,10 @@ def _prepare_update(zip_path):
                     shutil.copytree(str(src), str(dst))
                 else:
                     shutil.copy2(str(src), str(dst))
-            except Exception:
-                pass
+            except Exception as exc:
+                raise RuntimeError(
+                    f"{_('Could not migrate user data:')} {src.name}: {exc}"
+                ) from exc
 
     return update_dir
 
