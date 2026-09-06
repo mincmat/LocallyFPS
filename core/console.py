@@ -4,11 +4,21 @@ from . import config
 from .i18n import _
 
 
+def _safe_print(value="", **kwargs):
+    """Print without crashing on legacy consoles with narrow encodings."""
+    try:
+        print(value, **kwargs)
+    except UnicodeEncodeError:
+        encoding = getattr(sys.stdout, "encoding", None) or "ascii"
+        compatible = str(value).encode(encoding, errors="replace").decode(encoding)
+        print(compatible, **kwargs)
+
+
 def status(msg, level="INFO"):
     c = {"INFO": (Color.info, "[*]"), "OK": (Color.ok, "[✓]"),
          "WARN": (Color.warn, "[!]"), "ERROR": (Color.error, "[x]")}
     cf, pr = c.get(level, (Color.info, "[*]"))
-    print(f"{cf(_(pr))} {cf(msg)}", flush=True)
+    _safe_print(f"{cf(_(pr))} {cf(msg)}", flush=True)
 
 
 def _yes_words():
@@ -33,7 +43,7 @@ def ask_yes_no(question, default=False):
         try:
             resp = input(f"{Color.magenta('?')} {_(question)}{Color.dim(sfx)}").strip().lower()
         except EOFError:
-            print()
+            _safe_print()
             return default
         if not resp:
             return default
@@ -41,4 +51,4 @@ def ask_yes_no(question, default=False):
             return True
         if resp in _no_words():
             return False
-        print(f"{Color.warn(_(hint))}")
+        _safe_print(f"{Color.warn(_(hint))}")

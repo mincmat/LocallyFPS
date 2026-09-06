@@ -11,6 +11,7 @@ from pathlib import Path
 from unittest import mock
 
 from core import manifest, paths
+from core import _configure_stdio
 from core.config import _validated_config
 from core.deps import safe_extract_tar, safe_extract_zip
 from core.disk import estimate_frame_storage, estimate_pipeline_storage
@@ -270,6 +271,12 @@ class ProgressTests(unittest.TestCase):
         self.assertNotIn("150B", rendered)
         self.assertIn("ETA 3min 0s", rendered)
         self.assertNotIn("60s", rendered)
+
+    def test_stdio_configuration_tolerates_streams_without_reconfigure(self):
+        with mock.patch("core.sys.stdout", io.StringIO()), mock.patch(
+            "core.sys.stderr", io.StringIO(),
+        ):
+            _configure_stdio()
 
 
 class UpdateCheckTests(unittest.TestCase):
