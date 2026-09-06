@@ -52,7 +52,8 @@ def _compatible_output(codec_name, output_path, info=None):
     """Return an output path whose container can hold the chosen codec."""
     subtitles = (info or {}).get("subtitle_streams", [])
     mp4_text_codecs = {"ass", "ssa", "subrip", "text", "mov_text", "webvtt"}
-    if subtitles and any(s.get("codec") not in mp4_text_codecs for s in subtitles):
+    if ((subtitles and any(s.get("codec") not in mp4_text_codecs for s in subtitles))
+            or (info or {}).get("attachment_tracks", 0)):
         return output_path.with_suffix(".mkv")
     if output_path.suffix.lower() in (".mp4", ".m4v", ".mov", ".mkv"):
         return output_path
@@ -130,8 +131,8 @@ def _pick_best_encoder(preferred="libx264"):
     available = _detect_available_encoders()
     vendors = _detect_gpu_vendors()
 
-    vp = config.CONFIG.get("video_preset", "")
-    if vp == "custom" and preferred in available and preferred in encoder_presets:
+    if (config.CONFIG.get("encoder_mode", "auto") == "manual"
+            and preferred in available and preferred in encoder_presets):
         return encoder_presets[preferred]
 
     if preferred in ("libx264", "libx265") and vendors:
@@ -189,6 +190,11 @@ def _add_subtitle_args(cmd, output_path, info):
         cmd += ["-c:s", "mov_text"]
 
 
+def _add_attachment_args(cmd, output_path, info):
+    if (info or {}).get("attachment_tracks", 0) and output_path.suffix.lower() == ".mkv":
+        cmd += ["-map", "1:t?", "-c:t", "copy"]
+
+
 def _build_encode_command(
     enc, out_frames_dir, original_video, target_fps, output_path,
     has_audio, video_duration, crf, preset, info
@@ -203,6 +209,7 @@ def _build_encode_command(
     if has_audio:
         cmd += ["-map", "1:a?", "-c:a", "aac", "-b:a", "192k"]
     _add_subtitle_args(cmd, output_path, info)
+    _add_attachment_args(cmd, output_path, info)
     cmd += ["-map_metadata", "1", "-map_chapters", "1"]
     if "vaapi" in codec_name:
         render_nodes = sorted(p for p in Path("/dev/dri").glob("renderD*") if p.is_char_device())
@@ -269,6 +276,7 @@ def _run_ffmpeg(cmd, video_duration, progress_cb=None, label=None):
 def _validate_output(
     output_path, expected_fps=None, expected_frames=None,
     expected_duration=None, expected_audio_tracks=None,
+    expected_subtitle_tracks=None, expected_attachment_tracks=None,
 ):
     if not output_path.is_file() or output_path.stat().st_size == 0:
         return False
@@ -307,6 +315,14 @@ def _validate_output(
             audio_count = sum(s.get("codec_type") == "audio" for s in streams)
             if audio_count != int(expected_audio_tracks):
                 return False
+        if expected_subtitle_tracks is not None:
+            subtitle_count = sum(s.get("codec_type") == "subtitle" for s in streams)
+            if subtitle_count != int(expected_subtitle_tracks):
+                return False
+        if expected_attachment_tracks is not None:
+            attachment_count = sum(s.get("codec_type") == "attachment" for s in streams)
+            if attachment_count != int(expected_attachment_tracks):
+                return False
     except (ValueError, TypeError, KeyError, StopIteration, json.JSONDecodeError):
         return False
     return True
@@ -335,6 +351,8 @@ def reassemble_video(
     tail = ""
     last_spinner = None
     expected_audio_tracks = (info or {}).get("audio_tracks", 0) if has_audio else 0
+    expected_subtitle_tracks = len((info or {}).get("subtitle_streams", []))
+    expected_attachment_tracks = (info or {}).get("attachment_tracks", 0)
     for index, name in enumerate(candidates):
         candidate = encoder_presets[name]
         actual_output_path = _compatible_output(name, output_path, info)
@@ -359,6 +377,8 @@ def reassemble_video(
             expected_frames=result_frames,
             expected_duration=video_duration,
             expected_audio_tracks=expected_audio_tracks,
+            expected_subtitle_tracks=expected_subtitle_tracks,
+            expected_attachment_tracks=expected_attachment_tracks,
         ):
             staging_path.replace(actual_output_path)
             if last_spinner:

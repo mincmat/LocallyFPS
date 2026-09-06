@@ -43,7 +43,7 @@ def _run_advanced_settings():
             ei = plat.interactive_select(_("Encoder"), encoders)
             if 0 <= ei < len(encoders):
                 config.CONFIG["encoder"] = encoders[ei]
-                config.CONFIG["video_preset"] = "custom"
+                config.CONFIG["encoder_mode"] = "manual"
         elif i == 1:
             print(f"\n{Color.dim(_('CRF'))} (0-51, {_('lower = better quality')}):")
             try:
@@ -51,7 +51,6 @@ def _run_advanced_settings():
                 v = int(v)
                 if 0 <= v <= 51:
                     config.CONFIG["crf"] = v
-                    config.CONFIG["video_preset"] = "custom"
             except (ValueError, EOFError):
                 pass
         elif i == 2:
@@ -60,7 +59,6 @@ def _run_advanced_settings():
             pi = plat.interactive_select(_("ffmpeg preset"), presets)
             if 0 <= pi < len(presets):
                 config.CONFIG["preset"] = presets[pi]
-                config.CONFIG["video_preset"] = "custom"
 
 
 _SEPARATOR = "─── ─── ───"

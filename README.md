@@ -18,6 +18,8 @@ LocallyFPS uses the **RIFE** (Real-Time Intermediate Flow Estimation) AI model, 
 - **Correct color handling** — SDR metadata is preserved; tone-mapped HDR output is correctly tagged as SDR BT.709
 - **Audio and subtitle preservation** — all audio tracks and compatible subtitles are retained; MKV is selected when needed
 - **VFR normalization** — variable-timestamp sources are converted to a stable CFR timeline before interpolation
+- **Automatic deinterlacing and rotation-aware sizing** for broadcast and phone footage
+- **Scene-cut protection** — AI-generated blends across shot changes are replaced automatically
 - **Hardware-accelerated encoding** — NVENC, VAAPI, QSV, VideoToolbox with automatic fallback
 - **Validated GPU interpolation** — corrupt or duplicated Vulkan output is detected before a full run
 - **Safe optical-flow fallback** — incompatible GPU drivers automatically use motion-compensated FFmpeg interpolation
@@ -25,6 +27,7 @@ LocallyFPS uses the **RIFE** (Real-Time Intermediate Flow Estimation) AI model, 
 - **10 languages** — English, Español, Deutsch, Français, Português, Русский, العربية, 中文, 日本語, 한국어
 - **Interactive TUI** with raw keyboard input on Linux/macOS
 - **CLI mode** for scripting and batch processing
+- **One-command batch mode** with automatic FPS selection and safe per-file continuation
 - **Guided dependency setup** — ffmpeg and RIFE are auto-downloaded on Linux/Windows; macOS uses Homebrew's feature-complete FFmpeg build
 - **Encoder fallback chain** — if your preferred encoder fails, it tries alternatives automatically
 - **Atomic validated exports** — existing outputs survive failures; FPS, frames, duration, audio and decoding are checked
@@ -70,11 +73,15 @@ You'll see a menu. Pick **Enhance video**, select your file from `videos/origina
 
 ```bash
 python fps_enhancer.py input.mp4 --target-fps 60
+python fps_enhancer.py input.mp4 --auto-fps
+python fps_enhancer.py --batch videos/original --auto-fps --yes
 python fps_enhancer.py input.mkv --target-fps 120 --model rife-v4.6
 python fps_enhancer.py input.mp4 --target-fps 60 --output result.mp4
 ```
 
 Run `python fps_enhancer.py --help` for all options.
+
+In the interactive FPS screen, press Enter to accept the automatically recommended target.
 
 ---
 

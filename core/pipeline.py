@@ -43,8 +43,8 @@ def run_pipeline(info, target_fps, output_path, gpu_settings, model=None, intera
                 "WARN",
             )
 
-    w = max(info.get("width", 0), 1)
-    h = max(info.get("height", 0), 1)
+    w = max(info.get("display_width", info.get("width", 0)), 1)
+    h = max(info.get("display_height", info.get("height", 0)), 1)
     fc = max(
         info.get("frame_count", 0)
         or int(info.get("fps", 30) * info.get("duration", 0)),

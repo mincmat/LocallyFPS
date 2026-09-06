@@ -5,7 +5,7 @@ LocallyFPS - Linux wrapper
 import sys
 from pathlib import Path
 
-HERE = Path(__file__).resolve().parent
+HERE = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent
 
 sys.path.insert(0, str(HERE))
 

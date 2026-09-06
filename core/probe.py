@@ -18,10 +18,10 @@ def _parse_fps(rate_str):
         return 0.0
 
 
-def _count_frames_real(video_path):
+def _count_frames_real(video_path, stream_index=0):
     cmd = [
         str(paths.FFPROBE_BIN), "-v", "error",
-        "-select_streams", "v:0",
+        "-select_streams", str(stream_index),
         "-count_frames",
         "-show_entries", "stream=nb_read_frames",
         "-of", "csv=p=0",
@@ -102,7 +102,7 @@ def probe_video_file(path):
             frame_count = int(fps * duration)
         if frame_count <= 0:
             status(_("Counting frames (this may take a while)..."), "INFO")
-            frame_count = _count_frames_real(path)
+            frame_count = _count_frames_real(path, int(stream.get("index", 0) or 0))
             if frame_count > 0:
                 fps = frame_count / duration if duration > 0 else fps
 
@@ -111,6 +111,19 @@ def probe_video_file(path):
             {"index": int(s["index"]), "codec": s.get("codec_name", "unknown")}
             for s in streams if s.get("codec_type") == "subtitle" and "index" in s
         ]
+        attachment_streams = [s for s in streams if s.get("codec_type") == "attachment"]
+        data_streams = [s for s in streams if s.get("codec_type") == "data"]
+        rotation = 0
+        for side_data in stream.get("side_data_list") or []:
+            try:
+                rotation = int(round(float(side_data.get("rotation", 0) or 0))) % 360
+            except (TypeError, ValueError):
+                pass
+        coded_width = max(0, int(stream.get("width", 0) or 0))
+        coded_height = max(0, int(stream.get("height", 0) or 0))
+        display_width, display_height = coded_width, coded_height
+        if rotation in (90, 270):
+            display_width, display_height = coded_height, coded_width
 
         return {
             "path": path,
@@ -118,8 +131,12 @@ def probe_video_file(path):
             "container": fmt.get("format_long_name", "unknown"),
             "codec": stream.get("codec_name", "unknown"),
             "video_stream_index": int(stream.get("index", 0) or 0),
-            "width": max(0, int(stream.get("width", 0) or 0)),
-            "height": max(0, int(stream.get("height", 0) or 0)),
+            "width": coded_width,
+            "height": coded_height,
+            "display_width": display_width,
+            "display_height": display_height,
+            "rotation": rotation,
+            "field_order": stream.get("field_order", "unknown"),
             "sample_aspect_ratio": stream.get("sample_aspect_ratio"),
             "display_aspect_ratio": stream.get("display_aspect_ratio"),
             "fps": fps,
@@ -135,6 +152,8 @@ def probe_video_file(path):
             "has_audio": len(audio_streams) > 0,
             "audio_tracks": len(audio_streams),
             "subtitle_streams": subtitle_streams,
+            "attachment_tracks": len(attachment_streams),
+            "data_tracks": len(data_streams),
             "pix_fmt": stream.get("pix_fmt", "unknown"),
             "color_space": stream.get("color_space"),
             "color_transfer": stream.get("color_transfer"),

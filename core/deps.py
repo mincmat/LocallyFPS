@@ -190,6 +190,28 @@ def _relocate_ffmpeg_binaries(base_dir):
             break
 
 
+def _install_macos_ffmpeg_full(bar=None):
+    brew = shutil.which("brew")
+    if not brew:
+        return False
+    if bar:
+        bar.update(0, label=_("Installing ffmpeg-full with Homebrew..."))
+    else:
+        status(_("Installing ffmpeg-full with Homebrew..."), "INFO")
+    try:
+        result = subprocess.run([brew, "install", "ffmpeg-full"], timeout=3600)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    if result.returncode != 0:
+        return False
+    ffmpeg, ffprobe = _find_system_ffmpeg_pair()
+    if not ffmpeg or not ffprobe:
+        return False
+    paths.FFMPEG_BIN = Path(ffmpeg)
+    paths.FFPROBE_BIN = Path(ffprobe)
+    return True
+
+
 def ensure_ffmpeg(auto_yes=False, bar=None):
     from . import manifest
 
@@ -225,8 +247,11 @@ def ensure_ffmpeg(auto_yes=False, bar=None):
 
     url = FFMPEG_RELEASE_URLS().get(paths.OS_NAME)
     if not url:
-        if not auto_yes:
-            _show_manual_install_hint("ffmpeg")
+        if paths.OS_NAME == "macos" and _install_macos_ffmpeg_full(bar=bar):
+            manifest.record("ffmpeg", "homebrew-ffmpeg-full", paths.FFMPEG_BIN)
+            manifest.record("ffprobe", "homebrew-ffmpeg-full", paths.FFPROBE_BIN)
+            return True
+        _show_manual_install_hint("ffmpeg")
         return False
 
     if not auto_yes and not ask_yes_no(_("Download ffmpeg now?"), default=True):

@@ -11,13 +11,16 @@ from pathlib import Path
 from unittest import mock
 
 from core import manifest, paths
+from core.config import _validated_config
 from core.deps import safe_extract_tar, safe_extract_zip
 from core.disk import estimate_frame_storage, estimate_pipeline_storage
 from core.extract import _get_extraction_filter, _get_pix_fmt_filter, extract_frames
 from core.interpolate import (
     _build_ffmpeg_fallback_command,
+    _detect_scene_cuts,
     _gpu_requires_safe_fallback,
     _interpolated_frame_is_plausible,
+    _repair_scene_cut_frames,
     _validate_generated_sequence,
     _validation_pair_indexes,
     run_interpolation,
@@ -34,7 +37,7 @@ from core.reassemble import (
 )
 from core.update_utils import create_swap_script, parse_version
 from core.updater import UpdateCheckError, check_for_updates
-from core.wizard import _valid_cli_target_fps
+from core.wizard import _valid_cli_target_fps, recommended_target_fps
 
 
 class EncoderTests(unittest.TestCase):
@@ -88,6 +91,19 @@ class EncoderTests(unittest.TestCase):
         result = _compatible_output("libx264", Path("output.mp4"), info)
         self.assertEqual(result, Path("output.mkv"))
 
+    def test_attachments_force_mkv_and_are_mapped(self):
+        info = {"subtitle_streams": [], "attachment_tracks": 1}
+        self.assertEqual(
+            _compatible_output("libx264", Path("output.mp4"), info),
+            Path("output.mkv"),
+        )
+        cmd = _build_encode_command(
+            {"codec": "libx264", "pix_fmt": "yuv420p", "hwaccel": None},
+            Path("frames"), Path("input.mkv"), 60, Path("output.mkv"),
+            False, 1.0, 18, "fast", info,
+        )
+        self.assertIn("-map 1:t? -c:t copy", " ".join(cmd))
+
     def test_encoder_filter_handles_odd_dimensions_and_preserves_sar(self):
         value = _build_video_filter("libx264", {
             "sample_aspect_ratio": "16:15", "color_space": "bt709",
@@ -127,6 +143,23 @@ class InputValidationTests(unittest.TestCase):
             self.assertFalse(_valid_cli_target_fps(value))
         for value in (1, 23.976, 60, 1000):
             self.assertTrue(_valid_cli_target_fps(value))
+
+    def test_automatic_target_uses_familiar_smooth_rates(self):
+        self.assertEqual(recommended_target_fps(23.976), 60)
+        self.assertEqual(recommended_target_fps(30), 60)
+        self.assertEqual(recommended_target_fps(50), 120)
+        self.assertEqual(recommended_target_fps(120), 240)
+
+    def test_invalid_config_values_are_repaired(self):
+        repaired = _validated_config({
+            "language": "bad", "crf": float("nan"), "preset": "turbo",
+            "model": "../../bad", "video_preset": "bad",
+        })
+        self.assertEqual(repaired["crf"], 16)
+        self.assertEqual(repaired["preset"], "fast")
+        self.assertEqual(repaired["model"], "rife-v4.6")
+        self.assertEqual(repaired["video_preset"], "balanced")
+        self.assertEqual(repaired["encoder_mode"], "auto")
 
 
 class DiskEstimateTests(unittest.TestCase):
@@ -216,6 +249,21 @@ class InterpolationValidationTests(unittest.TestCase):
         second = bytes([30, 40, 50]) * 100
         self.assertFalse(_interpolated_frame_is_plausible(first, second, first))
 
+    def test_intermediate_frames_across_scene_cuts_are_replaced(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            inputs, outputs = root / "in", root / "out"
+            inputs.mkdir()
+            outputs.mkdir()
+            for index, value in enumerate((b"A", b"B", b"C"), 1):
+                (inputs / f"{index:08d}.png").write_bytes(value)
+            for index in range(1, 7):
+                (outputs / f"{index:08d}.png").write_bytes(b"AI")
+            repaired = _repair_scene_cut_frames(inputs, outputs, 3, 6, {1})
+            self.assertEqual(repaired, 1)
+            self.assertEqual((outputs / "00000002.png").read_bytes(), b"B")
+            self.assertEqual((outputs / "00000004.png").read_bytes(), b"AI")
+
     @mock.patch("core.interpolate._decode_rgb_frame", return_value=b"rgb")
     def test_generated_sequence_must_be_complete_and_contiguous(self, _decode):
         with tempfile.TemporaryDirectory() as temp:
@@ -262,6 +310,23 @@ class ExtractionTests(unittest.TestCase):
         value = _get_extraction_filter({"is_vfr": False, "fps": 24000 / 1001})
         self.assertIn("fps=23.976", value)
         self.assertTrue(value.endswith("format=rgb24"))
+
+    def test_interlaced_input_is_deinterlaced_before_interpolation(self):
+        value = _get_extraction_filter({"field_order": "tt", "fps": 25})
+        self.assertTrue(value.startswith("bwdif="))
+        self.assertIn(",fps=25,", value)
+
+    def test_scene_changes_are_detected_from_normalized_frames(self):
+        with tempfile.TemporaryDirectory() as temp:
+            frames = Path(temp) / "frames"
+            frames.mkdir()
+            subprocess.run([
+                str(paths.FFMPEG_BIN), "-v", "error", "-f", "lavfi", "-i",
+                "color=red:size=64x64:rate=4:duration=1", "-f", "lavfi", "-i",
+                "color=blue:size=64x64:rate=4:duration=1", "-filter_complex",
+                "[0:v][1:v]concat=n=2:v=1:a=0", str(frames / "%08d.png"),
+            ], check=True)
+            self.assertEqual(_detect_scene_cuts(frames, 4, 8), {4})
 
     def test_10bit_hdr_extraction(self):
         filters = subprocess.run(

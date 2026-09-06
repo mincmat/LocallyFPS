@@ -3,6 +3,12 @@ setlocal
 set BASE_DIR=%~dp0
 set ENHANCER=%BASE_DIR%fps_enhancer.py
 set LOCAL_PYTHON=%BASE_DIR%runtime\python.exe
+set LOCAL_APP=%BASE_DIR%LocallyFPS.exe
+
+if exist "%LOCAL_APP%" (
+    "%LOCAL_APP%" %*
+    exit /b %errorlevel%
+)
 
 if not exist "%ENHANCER%" (
     echo Error: fps_enhancer.py not found in %BASE_DIR%

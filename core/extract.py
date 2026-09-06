@@ -106,6 +106,9 @@ def _get_pix_fmt_filter(info):
 def _get_extraction_filter(info):
     """Normalize presentation timestamps to CFR before the PNG sequence loses them."""
     filters = []
+    field_order = (info or {}).get("field_order", "unknown")
+    if field_order not in (None, "", "unknown", "progressive"):
+        filters.append("bwdif=mode=send_frame:parity=auto:deint=all")
     if info and info.get("fps", 0) > 0:
         filters.append(f"fps={info['fps']:.12g}")
     filters.append(_get_pix_fmt_filter(info))
@@ -126,8 +129,8 @@ def _supports_hdr_tonemapping(ffmpeg_bin):
 
 def extract_frames(video_path, frames_dir, info=None, gpu_settings=None, progress_cb=None):
     if info:
-        w = max(info.get("width", 1920), 1920)
-        h = max(info.get("height", 1080), 1080)
+        w = max(info.get("display_width", info.get("width", 1920)), 1920)
+        h = max(info.get("display_height", info.get("height", 1080)), 1080)
         fc = max(info.get("frame_count", 18000) or int(info.get("fps", 30) * info.get("duration", 600)), 100)
         estimated = estimate_frame_storage(w, h, fc)
         check_disk_space(frames_dir, estimated)

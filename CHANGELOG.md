@@ -2,6 +2,13 @@
 
 ## 3.0.1 - 2026-09-06
 
+- Enabled genuinely automatic hardware-encoder selection by default, while retaining an explicit manual mode.
+- Added automatic target-FPS recommendations and resilient whole-folder batch processing.
+- Added interlaced-source detection/deinterlacing, rotation-aware sizing and scene-cut protection.
+- Preserved and validated subtitle and attachment stream counts when the output container supports them.
+- Added atomic configuration repair and validation for invalid or corrupt user settings.
+- Reworked releases to build and smoke-test native portable executables on Linux, Windows and macOS.
+- Removed accidental branch-triggered releases and added build-provenance attestations for release archives.
 - Fixed stream probing so audio and subtitle tracks are detected and preserved instead of silently dropped.
 - Normalized presentation timestamps before frame extraction so VFR sources keep their duration and audio sync.
 - Correctly tagged HDR10/HLG tone-mapped output as SDR BT.709 instead of copying contradictory HDR metadata.

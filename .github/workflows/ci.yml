@@ -31,3 +31,23 @@ jobs:
         run: choco install ffmpeg -y --no-progress
       - run: python -m compileall -q .
       - run: python -m unittest discover -s tests -v
+
+  portable-build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - run: python -m pip install --disable-pip-version-check pyinstaller
+      - run: pyinstaller --clean --onefile --name LocallyFPS fps_enhancer.py
+      - name: Smoke-test portable executable
+        shell: bash
+        run: |
+          executable="dist/LocallyFPS"
+          if [ "$RUNNER_OS" = "Windows" ]; then executable="dist/LocallyFPS.exe"; fi
+          "$executable" --help

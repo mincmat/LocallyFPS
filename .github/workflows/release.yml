@@ -3,43 +3,99 @@ name: release
 on:
   push:
     tags: ["v*"]
-    branches: ["release-v*"]
 
 permissions:
   contents: write
+  id-token: write
+  attestations: write
 
 jobs:
-  release:
-    runs-on: ubuntu-latest
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: Linux
+            executable: LocallyFPS
+          - os: windows-latest
+            platform: Windows
+            executable: LocallyFPS.exe
+          - os: macos-latest
+            platform: macOS
+            executable: LocallyFPS
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - name: install FFmpeg test dependency
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - name: Install FFmpeg (Linux)
+        if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
-      - name: resolve release tag
-        run: echo "RELEASE_TAG=${GITHUB_REF_NAME#release-}" >> "$GITHUB_ENV"
-      - name: test
+      - name: Install FFmpeg (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install ffmpeg-full
+          echo "$(brew --prefix ffmpeg-full)/bin" >> "$GITHUB_PATH"
+      - name: Install FFmpeg (Windows)
+        if: runner.os == 'Windows'
+        run: choco install ffmpeg -y --no-progress
+      - name: Test
         run: |
           python -m compileall -q .
           python -m unittest discover -s tests -v
-      - name: package
+      - name: Build portable executable
         run: |
-          mkdir -p dist/stage
-          rsync -a ./ dist/stage/ \
-            --exclude .git --exclude .github --exclude dist \
-            --exclude tests --exclude __pycache__ --exclude '*.pyc'
-          chmod +x dist/stage/start.sh dist/stage/start.command
-          for platform in Linux Windows macOS; do
-            cp -a dist/stage "dist/LocallyFPS_${platform}_${RELEASE_TAG}"
-            (cd dist && zip -qr "LocallyFPS_${platform}_${RELEASE_TAG}.zip" "LocallyFPS_${platform}_${RELEASE_TAG}")
-            rm -rf "dist/LocallyFPS_${platform}_${RELEASE_TAG}"
-          done
-          (cd dist && sha256sum *.zip > SHA256SUMS.txt)
+          python -m pip install --disable-pip-version-check pyinstaller
+          pyinstaller --clean --onefile --name LocallyFPS fps_enhancer.py
+      - name: Package (POSIX)
+        if: runner.os != 'Windows'
+        run: |
+          stage="package/LocallyFPS_${{ matrix.platform }}_${GITHUB_REF_NAME}"
+          mkdir -p "$stage"
+          cp "dist/${{ matrix.executable }}" "$stage/"
+          cp README.md CHANGELOG.md LICENSE "$stage/"
+          cp -R languages "$stage/"
+          chmod +x "$stage/${{ matrix.executable }}"
+          (cd package && zip -qr "LocallyFPS_${{ matrix.platform }}_${GITHUB_REF_NAME}.zip" "LocallyFPS_${{ matrix.platform }}_${GITHUB_REF_NAME}")
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $stage = "package/LocallyFPS_${{ matrix.platform }}_$env:GITHUB_REF_NAME"
+          New-Item -ItemType Directory -Force $stage | Out-Null
+          Copy-Item "dist/${{ matrix.executable }}", README.md, CHANGELOG.md, LICENSE $stage
+          Copy-Item -Recurse languages "$stage/languages"
+          Compress-Archive -Path $stage -DestinationPath "package/LocallyFPS_${{ matrix.platform }}_$env:GITHUB_REF_NAME.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LocallyFPS-${{ matrix.platform }}
+          path: package/*.zip
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: LocallyFPS-*
+          path: dist
+          merge-multiple: true
+      - name: Checksums
+        run: (cd dist && sha256sum *.zip > SHA256SUMS.txt)
+      - name: Attest release archives
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-path: dist/*.zip
       - name: publish
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$RELEASE_TAG" dist/*.zip dist/SHA256SUMS.txt \
+          gh release create "$GITHUB_REF_NAME" dist/*.zip dist/SHA256SUMS.txt \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
-            --title "$RELEASE_TAG" \
+            --title "$GITHUB_REF_NAME" \
             --notes-file <(awk '/^## /{if(found) exit; found=1; next} found' CHANGELOG.md)

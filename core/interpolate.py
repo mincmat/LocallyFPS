@@ -1,4 +1,7 @@
 import os
+import math
+import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -131,6 +134,49 @@ def _validate_rife_backend(in_frames_dir, model, gpu_id, uhd=False):
         return True
 
 
+def _detect_scene_cuts(in_frames_dir, source_fps, source_frame_count, threshold=0.30):
+    """Return zero-based source indexes that start a new scene."""
+    duration = source_frame_count / max(source_fps, 0.001)
+    cmd = [
+        str(paths.FFMPEG_BIN), "-hide_banner", "-v", "info",
+        "-framerate", f"{source_fps:.12g}", "-start_number", "1",
+        "-i", str(Path(in_frames_dir) / "%08d.png"),
+        "-vf", f"select='gt(scene,{threshold})',metadata=print",
+        "-an", "-f", "null", "-",
+    ]
+    try:
+        result = subprocess.run(
+            cmd, capture_output=True, text=True,
+            timeout=max(60.0, min(3600.0, duration * 0.5)),
+        )
+    except (OSError, subprocess.SubprocessError):
+        return set()
+    if result.returncode != 0:
+        return set()
+    cuts = {int(value) for value in re.findall(r"frame:\d+\s+pts:(\d+)", result.stderr)}
+    return {index for index in cuts if 0 < index < source_frame_count}
+
+
+def _repair_scene_cut_frames(in_frames_dir, out_frames_dir, source_count, target_count, cuts):
+    """Never retain an AI blend whose interpolation interval crosses a cut."""
+    repaired = 0
+    for cut in sorted(cuts):
+        left = cut - 1
+        first_output = max(0, math.floor(left * target_count / source_count))
+        last_output = min(target_count - 1, math.ceil(cut * target_count / source_count))
+        for output_index in range(first_output, last_output + 1):
+            position = output_index * source_count / target_count
+            if not (left < position < cut):
+                continue
+            source_index = left if position - left < 0.5 else cut
+            source = Path(in_frames_dir) / f"{source_index + 1:08d}.png"
+            target = Path(out_frames_dir) / f"{output_index + 1:08d}.png"
+            if source.is_file() and target.is_file():
+                shutil.copy2(source, target)
+                repaired += 1
+    return repaired
+
+
 def _build_ffmpeg_fallback_command(
     in_frames_dir, out_frames_dir, source_fps, target_fps, target_frame_count
 ):
@@ -172,6 +218,7 @@ def run_interpolation(
 
     selected_gpu = -1 if rife_cpu else (gpu_id if gpu_id is not None else 0)
     use_ffmpeg_fallback = False
+    scene_cuts = set()
     if target_fps <= source_fps:
         status(_("Target FPS is not higher than the source; using safe FFmpeg conversion."), "WARN")
         use_ffmpeg_fallback = True
@@ -222,6 +269,10 @@ def run_interpolation(
             "-j", threads,
         ]
         cmd += ["-g", str(selected_gpu)]
+    if not use_ffmpeg_fallback:
+        scene_cuts = _detect_scene_cuts(
+            in_frames_dir, source_fps, source_frame_count,
+        )
     if supports_n and not use_ffmpeg_fallback:
         cmd += ["-n", str(target_frame_count)]
     if uhd and not use_ffmpeg_fallback:
@@ -268,6 +319,17 @@ def run_interpolation(
         for line in output_lines[-20:]:
             status(f"    {line}", "ERROR")
         return 0
+
+    if not use_ffmpeg_fallback and scene_cuts:
+        repaired = _repair_scene_cut_frames(
+            in_frames_dir, out_frames_dir, source_frame_count,
+            target_frame_count, scene_cuts,
+        )
+        if repaired:
+            status(
+                f"{_('Protected scene changes')}: {len(scene_cuts)}",
+                "INFO",
+            )
 
     result_frames = count_files(out_frames_dir, "*.png")
     if not _validate_generated_sequence(out_frames_dir, target_frame_count):

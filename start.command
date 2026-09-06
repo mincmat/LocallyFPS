@@ -9,6 +9,11 @@ set -euo pipefail
 BASE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENHANCER="$BASE_DIR/fps_enhancer.py"
 LOCAL_PYTHON="$BASE_DIR/runtime/bin/python"
+LOCAL_APP="$BASE_DIR/LocallyFPS"
+
+if [ -x "$LOCAL_APP" ]; then
+    exec "$LOCAL_APP" "$@"
+fi
 
 if [ ! -f "$ENHANCER" ]; then
     echo "Error: fps_enhancer.py not found in $BASE_DIR"

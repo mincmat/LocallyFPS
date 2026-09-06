@@ -126,6 +126,8 @@ def prompt_for_video():
 
 def _validate_fps(raw, source_fps):
     raw = raw.strip().replace(",", ".")
+    if not raw:
+        return recommended_target_fps(source_fps)
     try:
         fps = float(raw)
     except ValueError:
@@ -223,6 +225,9 @@ def prompt_for_fps(source_fps, video_name=None):
         sys.stdout.write(video_line)
     sys.stdout.write(" " * hp + Color.accent_bold(header) + "\n")
     sys.stdout.write(" " * cp + Color.dim(cur_fps) + "\n")
+    automatic = f"{_('Press Enter for automatic')}: {format_fps(recommended_target_fps(source_fps))} fps"
+    ap = max(0, (term_w - len(automatic)) // 2)
+    sys.stdout.write(" " * ap + Color.dim(automatic) + "\n")
     sys.stdout.flush()
 
     if sys.platform.startswith("linux") and sys.stdin.isatty():
@@ -340,6 +345,7 @@ def interactive_wizard():
     while True:
         menu_items = [
             _("Enhance video"),
+            _("Enhance all videos automatically"),
             _("Settings"),
             _("Check for updates"),
             _("Exit"),
@@ -371,9 +377,18 @@ def interactive_wizard():
         if i == 0:
             pass
         elif i == 1:
-            _run_settings()
+            batch_args = argparse.Namespace(
+                batch=str(paths.VIDEOS_DIR / "original"), input=None,
+                target_fps=60.0, auto_fps=True, skip_existing=True,
+                model=None, threads=None, gpu_id=None, uhd=False,
+                output=None, yes=True, config=False,
+            )
+            run_batch(batch_args)
             continue
         elif i == 2:
+            _run_settings()
+            continue
+        elif i == 3:
             from .updater import run_updater
             run_updater()
             continue
@@ -383,7 +398,10 @@ def interactive_wizard():
         info = prompt_for_video()
         if info is None:
             continue
-        gpu_settings = choose_gpu_settings(info["width"], info["height"])
+        gpu_settings = choose_gpu_settings(
+            info.get("display_width", info["width"]),
+            info.get("display_height", info["height"]),
+        )
         target_fps = prompt_for_fps(info["fps"], info["path"].name)
         if target_fps is None:
             continue
@@ -401,6 +419,9 @@ def parse_args():
     )
     parser.add_argument("input", nargs="?", type=str, help=_("Input video path"))
     parser.add_argument("--target-fps", type=float, default=60.0, help=_("Target FPS (default: 60)"))
+    parser.add_argument("--auto-fps", action="store_true", help=_("Choose a suitable target FPS automatically"))
+    parser.add_argument("--batch", type=str, default=None, metavar="DIRECTORY", help=_("Process every supported video in a directory"))
+    parser.add_argument("--skip-existing", action="store_true", help=_("Skip outputs that already exist"))
     parser.add_argument("--model", type=str, default=None, help=_("RIFE model (default: rife-v4.6)"))
     parser.add_argument("--threads", type=str, default=None, help=_("Threads load:proc:save (default: auto based on GPU)"))
     parser.add_argument("--gpu-id", type=int, default=None, help=_("Vulkan GPU ID to use (default: auto)"))
@@ -415,6 +436,17 @@ def _valid_cli_target_fps(value):
     return math.isfinite(value) and 0 < value <= 1000
 
 
+def recommended_target_fps(source_fps):
+    """Choose a familiar smooth rate without creating an unreasonable multiplier."""
+    if not math.isfinite(source_fps) or source_fps <= 0:
+        return 60.0
+    if source_fps < 40:
+        return 60.0
+    if source_fps < 90:
+        return 120.0
+    return min(240.0, source_fps * 2.0)
+
+
 def main_cli(args):
     from .deps import ensure_ffmpeg, ensure_rife
     from .models import ensure_default_model, install_model
@@ -422,7 +454,8 @@ def main_cli(args):
         _run_settings()
         return
 
-    if not _valid_cli_target_fps(args.target_fps):
+    target_fps = args.target_fps
+    if not _valid_cli_target_fps(target_fps):
         status(_("Target FPS must be a finite number greater than 0 and no higher than 1000."), "ERROR")
         return False
 
@@ -441,8 +474,14 @@ def main_cli(args):
         status(_("Not a processable video file."), "ERROR")
         sys.exit(1)
     print_video_metadata(info)
+    if args.auto_fps:
+        target_fps = recommended_target_fps(info["fps"])
+        status(f"{_('Automatic target')}: {format_fps(target_fps)} fps", "INFO")
 
-    gpu_settings = choose_gpu_settings(info["width"], info["height"])
+    gpu_settings = choose_gpu_settings(
+        info.get("display_width", info["width"]),
+        info.get("display_height", info["height"]),
+    )
     if args.threads:
         gpu_settings["threads"] = args.threads
     if args.gpu_id is not None:
@@ -450,7 +489,10 @@ def main_cli(args):
     if args.uhd:
         gpu_settings["uhd"] = True
 
-    output_path = resolve_output_path(args.output or "", input_path, args.target_fps)
+    output_path = resolve_output_path(args.output or "", input_path, target_fps)
+    if output_path.exists() and args.skip_existing:
+        status(f"{_('Already exists:')} {output_path.name}. {_('Skipped.')}", "WARN")
+        return True
     if output_path.exists() and not args.yes:
         if not ask_yes_no(f"{_('Already exists:')} {output_path.name}. {_('Overwrite?')}"):
             status(_("Output file exists. Skipped."), "WARN")
@@ -458,11 +500,41 @@ def main_cli(args):
 
     return run_pipeline(
         info,
-        args.target_fps,
+        target_fps,
         output_path,
         gpu_settings,
         model=args.model,
     )
+
+
+def run_batch(args):
+    directory = Path(args.batch).expanduser().resolve()
+    if not directory.is_dir():
+        status(f"{_('The input directory does not exist:')} {directory}", "ERROR")
+        return False
+    extensions = {
+        '.mp4', '.m4v', '.mkv', '.avi', '.mov', '.webm', '.flv', '.wmv',
+        '.mpg', '.mpeg', '.ts', '.mts', '.m2ts', '.ogv', '.3gp', '.vob',
+    }
+    videos = sorted(p for p in directory.iterdir() if p.is_file() and p.suffix.lower() in extensions)
+    if not videos:
+        status(_("No supported videos found in the selected directory."), "ERROR")
+        return False
+    failures = []
+    for index, video in enumerate(videos, 1):
+        status(f"[{index}/{len(videos)}] {video.name}", "INFO")
+        item_args = argparse.Namespace(**vars(args))
+        item_args.input = str(video)
+        item_args.output = None
+        item_args.yes = True
+        item_args.skip_existing = True
+        if main_cli(item_args) is False:
+            failures.append(video.name)
+    if failures:
+        status(f"{len(failures)} {_('videos failed:')} {', '.join(failures)}", "ERROR")
+        return False
+    status(f"{len(videos)} {_('videos completed successfully.')}", "OK")
+    return True
 
 
 def main():
@@ -552,7 +624,10 @@ def main():
         _run_settings()
         return
 
-    if args.input:
+    if args.batch:
+        if run_batch(args) is False:
+            sys.exit(1)
+    elif args.input:
         if main_cli(args) is False:
             sys.exit(1)
     else:
