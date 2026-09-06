@@ -86,8 +86,8 @@ class InterpolationValidationTests(unittest.TestCase):
         self.assertIn("me_mode=bilat", joined)
         self.assertIn("tpad=stop_mode=clone", joined)
         self.assertIn("-frames:v 120", joined)
-        self.assertIn("input/%08d.png", joined)
-        self.assertIn("output/%08d.png", joined)
+        self.assertIn(str(Path("input") / "%08d.png"), cmd)
+        self.assertIn(str(Path("output") / "%08d.png"), cmd)
 
     def test_valid_interpolation_is_accepted(self):
         first = bytes([10, 20, 30]) * 100
