@@ -83,6 +83,10 @@ def run_pipeline(info, target_fps, output_path, gpu_settings, model=None, intera
         rife_cpu=gpu_settings.get("rife_cpu", False),
         progress_cb=(lambda f: pb(0.30 + f * 0.55, _("Interpolating..."))) if pb else None,
     )
+    if not actual_fps:
+        tmp.cleanup()
+        status(_("Interpolation failed validation."), "ERROR")
+        return False
 
     result_frames = count_files(tmp.out_frames_dir, "*.png")
     final_output_path = reassemble_video(

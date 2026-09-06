@@ -3,7 +3,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-APP_VERSION = "3.1"
+APP_VERSION = "3.1.1"
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 FFMPEG_BIN = None

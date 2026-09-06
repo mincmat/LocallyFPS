@@ -1,7 +1,9 @@
 import os
 import subprocess
 import sys
+import tempfile
 import threading
+from pathlib import Path
 
 try:
     from tqdm import tqdm
@@ -19,6 +21,93 @@ from .progress import ProgressBar
 
 def _model_supports_custom_frame_count(model):
     return model.startswith("rife-v4")
+
+
+def _mean_absolute_difference(first, second, sample_limit=100_000):
+    """Return a cheap RGB byte-distance using a bounded, uniform sample."""
+    if not first or len(first) != len(second):
+        return float("inf")
+    step = max(1, len(first) // sample_limit)
+    indexes = range(0, len(first), step)
+    return sum(abs(first[i] - second[i]) for i in indexes) / len(indexes)
+
+
+def _interpolated_frame_is_plausible(first, second, middle):
+    """Reject obvious GPU corruption and silent duplicate-frame output."""
+    source_delta = _mean_absolute_difference(first, second)
+    first_delta = _mean_absolute_difference(first, middle)
+    second_delta = _mean_absolute_difference(second, middle)
+    nearest_source = min(first_delta, second_delta)
+    if source_delta > 2.0 and nearest_source < source_delta * 0.01:
+        return False
+    return nearest_source <= max(40.0, source_delta * 3.0 + 10.0)
+
+
+def _decode_rgb_frame(frame_path):
+    try:
+        result = subprocess.run(
+            [
+                str(paths.FFMPEG_BIN), "-v", "error", "-i", str(frame_path),
+                "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgb24", "pipe:1",
+            ],
+            capture_output=True,
+            timeout=30,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return result.stdout if result.returncode == 0 and result.stdout else None
+
+
+def _validate_rife_backend(in_frames_dir, model, gpu_id, uhd=False):
+    """Interpolate one pair and verify the generated image before a long run."""
+    inputs = sorted(Path(in_frames_dir).glob("*.png"))[:2]
+    if len(inputs) < 2:
+        return False
+    with tempfile.TemporaryDirectory(prefix="locallyfps_rife_check_") as temp:
+        probe_output = Path(temp) / "interpolated.png"
+        cmd = [
+            str(paths.RIFE_BIN),
+            "-0", str(inputs[0]), "-1", str(inputs[1]),
+            "-o", str(probe_output),
+            "-m", str(paths.MODELS_DIR / model),
+            "-g", str(gpu_id),
+        ]
+        if uhd:
+            cmd.append("-u")
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        except (OSError, subprocess.SubprocessError):
+            return False
+        if result.returncode != 0 or not probe_output.is_file():
+            return False
+        first = _decode_rgb_frame(inputs[0])
+        second = _decode_rgb_frame(inputs[1])
+        middle = _decode_rgb_frame(probe_output)
+        if first is None or second is None or middle is None:
+            return False
+        return _interpolated_frame_is_plausible(first, second, middle)
+
+
+def _build_ffmpeg_fallback_command(
+    in_frames_dir, out_frames_dir, source_fps, target_fps, target_frame_count
+):
+    """Build a stable motion-compensated fallback for broken Vulkan drivers."""
+    fps = f"{target_fps:.12g}"
+    source_rate = f"{source_fps:.12g}"
+    tail_padding = f"{3.0 / max(source_fps, 0.001):.12g}"
+    motion_filter = (
+        f"tpad=stop_mode=clone:stop_duration={tail_padding},"
+        f"minterpolate=fps={fps}:mi_mode=mci:mc_mode=obmc:"
+        "me_mode=bilat:vsbmc=0"
+    )
+    return [
+        str(paths.FFMPEG_BIN), "-y", "-hide_banner", "-loglevel", "error",
+        "-framerate", source_rate, "-start_number", "1",
+        "-i", str(Path(in_frames_dir) / "%08d.png"),
+        "-vf", motion_filter,
+        "-frames:v", str(target_frame_count),
+        "-compression_level", "1", str(Path(out_frames_dir) / "%08d.png"),
+    ]
 
 
 def run_interpolation(
@@ -39,8 +128,34 @@ def run_interpolation(
             status(f"{_('Model')} '{model}' {_('only supports 2x frame rate.')}", "WARN")
             status(f"{_('Output will be at')} {actual_output_fps:.3f} fps {_('instead.')}", "WARN")
 
-    if rife_cpu:
-        status(_("Integrated GPU cannot handle this resolution; using CPU instead."), "WARN")
+    selected_gpu = -1 if rife_cpu else (gpu_id if gpu_id is not None else 0)
+    gpu_validation_failed = False
+    use_ffmpeg_fallback = False
+    if not _validate_rife_backend(in_frames_dir, model, selected_gpu, uhd=uhd):
+        if selected_gpu == -1:
+            status(_("RIFE output validation failed on CPU."), "ERROR")
+            return 0
+        status(
+            _("GPU interpolation produced invalid frames; using safe optical-flow fallback."),
+            "WARN",
+        )
+        gpu_validation_failed = True
+        use_ffmpeg_fallback = True
+
+    if use_ffmpeg_fallback:
+        status(
+            _("The Vulkan driver is incompatible with this RIFE model. "
+              "FFmpeg motion interpolation will be slower but will not corrupt frames."),
+            "WARN",
+        )
+        cmd = _build_ffmpeg_fallback_command(
+            in_frames_dir, out_frames_dir, source_fps, target_fps,
+            target_frame_count,
+        )
+        actual_output_fps = target_fps
+    elif rife_cpu:
+        if not gpu_validation_failed:
+            status(_("Integrated GPU cannot handle this resolution; using CPU instead."), "WARN")
         status(_("This will be slower. A dedicated GPU is recommended for large videos."), "WARN")
         cpu_threads = f"1:{min(os.cpu_count() or 4, 4)}:{min(os.cpu_count() or 4, 4)}"
         cmd = [
@@ -49,7 +164,7 @@ def run_interpolation(
             "-o", str(out_frames_dir),
             "-m", str(paths.MODELS_DIR / model),
             "-j", cpu_threads,
-            "-g", "-1",
+            "-g", str(selected_gpu),
         ]
     else:
         cmd = [
@@ -59,18 +174,17 @@ def run_interpolation(
             "-m", str(paths.MODELS_DIR / model),
             "-j", threads,
         ]
-        if gpu_id is not None:
-            cmd += ["-g", str(gpu_id)]
-    if supports_n:
+        cmd += ["-g", str(selected_gpu)]
+    if supports_n and not use_ffmpeg_fallback:
         cmd += ["-n", str(target_frame_count)]
-    if uhd:
+    if uhd and not use_ffmpeg_fallback:
         cmd += ["-u"]
 
     desc = _("Interpolating")
     try:
         process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
     except FileNotFoundError:
-        status(_("rife-ncnn-vulkan not found. Install dependencies first."), "ERROR")
+        status(_("Interpolation engine not found. Install dependencies first."), "ERROR")
         return 0
 
     stop_event = threading.Event()
@@ -101,7 +215,7 @@ def run_interpolation(
         pbar.close()
 
     if process.returncode != 0:
-        status(_("RIFE completed with error."), "ERROR")
+        status(_("Interpolation completed with error."), "ERROR")
         for line in output_lines[-20:]:
             status(f"    {line}", "ERROR")
         sys.exit(1)

@@ -12,6 +12,10 @@ from unittest import mock
 from core import paths
 from core.deps import safe_extract_tar, safe_extract_zip
 from core.extract import _get_pix_fmt_filter, extract_frames
+from core.interpolate import (
+    _build_ffmpeg_fallback_command,
+    _interpolated_frame_is_plausible,
+)
 from core.probe import probe_video_file
 from core.reassemble import _build_encode_command, _encoder_args, _validate_output
 from core.update_utils import parse_version
@@ -69,6 +73,38 @@ class UpdateCheckTests(unittest.TestCase):
 
         self.assertEqual(result[0], "v3.2.0")
         self.assertEqual(result[2], "LocallyFPS_Linux_v3.2.zip")
+
+
+class InterpolationValidationTests(unittest.TestCase):
+    def test_optical_flow_fallback_is_motion_compensated(self):
+        cmd = _build_ffmpeg_fallback_command(
+            Path("input"), Path("output"), 30.0, 60.0, 120
+        )
+        joined = " ".join(cmd)
+        self.assertIn("minterpolate=fps=60", joined)
+        self.assertIn("mi_mode=mci", joined)
+        self.assertIn("me_mode=bilat", joined)
+        self.assertIn("tpad=stop_mode=clone", joined)
+        self.assertIn("-frames:v 120", joined)
+        self.assertIn("input/%08d.png", joined)
+        self.assertIn("output/%08d.png", joined)
+
+    def test_valid_interpolation_is_accepted(self):
+        first = bytes([10, 20, 30]) * 100
+        second = bytes([20, 30, 40]) * 100
+        middle = bytes([15, 25, 35]) * 100
+        self.assertTrue(_interpolated_frame_is_plausible(first, second, middle))
+
+    def test_corrupt_interpolation_is_rejected(self):
+        first = bytes([20, 30, 40]) * 100
+        second = bytes([25, 35, 45]) * 100
+        corrupt = bytes([0, 255, 0]) * 100
+        self.assertFalse(_interpolated_frame_is_plausible(first, second, corrupt))
+
+    def test_duplicate_frame_is_rejected(self):
+        first = bytes([10, 20, 30]) * 100
+        second = bytes([30, 40, 50]) * 100
+        self.assertFalse(_interpolated_frame_is_plausible(first, second, first))
 
 
 class ExtractionTests(unittest.TestCase):

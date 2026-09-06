@@ -17,7 +17,8 @@ LocallyFPS uses the **RIFE** (Real-Time Intermediate Flow Estimation) AI model t
 - **HDR tone mapping** — HDR10/HLG content is tone-mapped to SDR during extraction
 - **Color metadata preservation** — color space, range, and primaries are carried through to the output
 - **Hardware-accelerated encoding** — NVENC, VAAPI, QSV, VideoToolbox with automatic fallback
-- **Smart GPU/CPU selection** — integrated GPUs automatically use CPU for 2K+ resolutions
+- **Validated GPU interpolation** — corrupt or duplicated Vulkan output is detected before a full run
+- **Safe optical-flow fallback** — incompatible GPU drivers automatically use motion-compensated FFmpeg interpolation
 - **Cross-platform** — Linux, Windows, macOS
 - **10 languages** — English, Español, Deutsch, Français, Português, Русский, العربية, 中文, 日本語, 한국어
 - **Interactive TUI** with raw keyboard input on Linux/macOS
