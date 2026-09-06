@@ -49,8 +49,9 @@ class PipelineJob:
         state = self.load()
         state.update(values)
         temporary = self.state_path.with_suffix(".json.tmp")
-        temporary.write_text(json.dumps(state, indent=2), encoding="utf-8")
-        with open(temporary, "rb") as handle:
+        with open(temporary, "w", encoding="utf-8") as handle:
+            json.dump(state, handle, indent=2)
+            handle.flush()
             os.fsync(handle.fileno())
         os.replace(temporary, self.state_path)
 
@@ -61,4 +62,3 @@ class PipelineJob:
 
     def cleanup(self):
         shutil.rmtree(self.root, ignore_errors=True)
-
