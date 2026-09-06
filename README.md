@@ -31,6 +31,7 @@ LocallyFPS uses the **RIFE** (Real-Time Intermediate Flow Estimation) AI model, 
 - **Guided dependency setup** — ffmpeg and RIFE are auto-downloaded on Linux/Windows; macOS uses Homebrew's feature-complete FFmpeg build
 - **Encoder fallback chain** — if your preferred encoder fails, it tries alternatives automatically
 - **Atomic validated exports** — existing outputs survive failures; FPS, frames, duration, audio and decoding are checked
+- **Crash-safe checkpoints** — an interruption preserves completed extraction or interpolation work and resumes it automatically
 - **SHA-256 verification** for application updates and local dependency integrity
 
 ---
@@ -102,6 +103,12 @@ Input video (H.264, H.265, etc.)
 1. **Extract** — ffmpeg pulls every frame as lossless PNG (with automatic pixel format conversion for H.265/HEVC)
 2. **Interpolate** — RIFE generates new frames between existing ones using AI
 3. **Reassemble** — ffmpeg encodes the result back into a video with audio and color metadata
+
+Completed heavy phases are stored as validated checkpoints under `cache/jobs/`.
+If the computer restarts, the terminal closes, or encoding fails, running the
+same input, model and target FPS again automatically reuses every completed
+phase. Checkpoints are removed only after the final video has been encoded and
+validated successfully.
 
 ---
 

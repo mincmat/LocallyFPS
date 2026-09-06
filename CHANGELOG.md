@@ -2,6 +2,9 @@
 
 ## 3.0.1 - 2026-09-06
 
+- Added validated, crash-safe pipeline checkpoints that automatically resume completed extraction and interpolation phases.
+- Preserved completed interpolation frames when final encoding fails, so another encoder attempt does not repeat hours of work.
+- Corrected fallback progress counters and stabilized ETA formatting.
 - Enabled genuinely automatic hardware-encoder selection by default, while retaining an explicit manual mode.
 - Added automatic target-FPS recommendations and resilient whole-folder batch processing.
 - Added interlaced-source detection/deinterlacing, rotation-aware sizing and scene-cut protection.

@@ -14,12 +14,14 @@ _temp_managers = []
 
 
 class TempManager:
-    def __init__(self, estimated_bytes=0):
+    def __init__(self, estimated_bytes=0, root=None, persistent=False):
         cache_dir = paths.CACHE_DIR
         cache_dir.mkdir(parents=True, exist_ok=True)
         if estimated_bytes > 0:
             check_disk_space(cache_dir, int(estimated_bytes * 1.10))
-        self.temp_root = Path(tempfile.mkdtemp(prefix="locallyfps_", dir=str(cache_dir)))
+        self.persistent = persistent
+        self.temp_root = Path(root) if root else Path(tempfile.mkdtemp(prefix="locallyfps_", dir=str(cache_dir)))
+        self.temp_root.mkdir(parents=True, exist_ok=True)
         self.in_frames_dir = self.temp_root / "in_frames"
         self.out_frames_dir = self.temp_root / "out_frames"
         self.in_frames_dir.mkdir(parents=True, exist_ok=True)
@@ -35,12 +37,18 @@ class TempManager:
             pass
 
     def _signal_handler(self, signum, frame):
-        status(_("Interrupt received. Cleaning up..."), "WARN")
+        message = (
+            _("Interrupt received. Progress saved for the next run.")
+            if self.persistent else _("Interrupt received. Cleaning up...")
+        )
+        status(message, "WARN")
         self.cleanup()
         sys.exit(130)
 
-    def cleanup(self):
+    def cleanup(self, force=False):
         if self._cleaned:
+            return
+        if self.persistent and not force:
             return
         self._cleaned = True
         if self.temp_root.exists():

@@ -25,6 +25,9 @@ from core.interpolate import (
     _validation_pair_indexes,
     run_interpolation,
 )
+from core.jobs import PipelineJob
+from core.pipeline import run_pipeline
+from core.progress import ProgressBar
 from core.probe import probe_video_file
 from core.reassemble import (
     _build_encode_command,
@@ -170,6 +173,103 @@ class DiskEstimateTests(unittest.TestCase):
     def test_pipeline_estimate_includes_source_and_generated_frames(self):
         estimate = estimate_pipeline_storage(100, 100, 30, 30, 60)
         self.assertEqual(estimate, estimate_frame_storage(100, 100, 90))
+
+
+class ResumeTests(unittest.TestCase):
+    def test_job_checkpoint_is_stable_and_invalidated_by_source_change(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / "video.mp4"
+            source.write_bytes(b"first")
+            old_cache = paths.CACHE_DIR
+            paths.CACHE_DIR = root / "cache"
+            try:
+                first = PipelineJob(source, 60, "rife-v4.6")
+                first.update(extracted_frames=12)
+                same = PipelineJob(source, 60, "rife-v4.6")
+                self.assertEqual(same.root, first.root)
+                self.assertEqual(same.load()["extracted_frames"], 12)
+                source.write_bytes(b"changed source")
+                changed = PipelineJob(source, 60, "rife-v4.6")
+                self.assertNotEqual(changed.root, first.root)
+            finally:
+                paths.CACHE_DIR = old_cache
+
+    @staticmethod
+    def _fake_extract(_source, frames_dir, *_args, **_kwargs):
+        for index in range(1, 3):
+            (frames_dir / f"{index:08d}.png").touch()
+        return 2
+
+    @staticmethod
+    def _fake_interpolation(**kwargs):
+        for index in range(1, 5):
+            (kwargs["out_frames_dir"] / f"{index:08d}.png").touch()
+        return 60
+
+    @mock.patch("core.pipeline.reassemble_video", return_value=None)
+    @mock.patch("core.pipeline.run_interpolation", side_effect=_fake_interpolation)
+    @mock.patch("core.pipeline.extract_frames", side_effect=_fake_extract)
+    def test_failed_export_keeps_completed_interpolation_checkpoint(
+        self, _extract, _interpolate, _reassemble,
+    ):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / "source.mp4"
+            source.write_bytes(b"video")
+            old_cache = paths.CACHE_DIR
+            old_models = paths.MODELS_DIR
+            paths.CACHE_DIR = root / "cache"
+            paths.MODELS_DIR = root / "models"
+            (paths.MODELS_DIR / "rife-v4.6").mkdir(parents=True)
+            info = {
+                "path": source, "width": 16, "height": 16,
+                "display_width": 16, "display_height": 16,
+                "frame_count": 2, "fps": 30, "duration": 2 / 30,
+                "has_audio": False,
+            }
+            try:
+                self.assertFalse(run_pipeline(
+                    info, 60, root / "output.mp4",
+                    {"gpu_id": 0, "uhd": False, "threads": "1:1:1"},
+                    model="rife-v4.6",
+                ))
+                job = PipelineJob(source, 60, "rife-v4.6")
+                self.assertTrue(job.root.is_dir())
+                self.assertTrue(job.load()["interpolation_complete"])
+                self.assertEqual(job.load()["output_frames"], 4)
+
+                with mock.patch(
+                    "core.pipeline._validate_generated_sequence", return_value=True,
+                ):
+                    _reassemble.return_value = root / "output.mp4"
+                    self.assertTrue(run_pipeline(
+                        info, 60, root / "output.mp4",
+                        {"gpu_id": 0, "uhd": False, "threads": "1:1:1"},
+                        model="rife-v4.6",
+                    ))
+                self.assertEqual(_extract.call_count, 1)
+                self.assertEqual(_interpolate.call_count, 1)
+                self.assertFalse(job.root.exists())
+            finally:
+                paths.CACHE_DIR = old_cache
+                paths.MODELS_DIR = old_models
+
+
+class ProgressTests(unittest.TestCase):
+    @mock.patch("core.progress.time.time", side_effect=[0, 180])
+    def test_frame_progress_is_not_formatted_as_bytes_and_eta_is_normalized(self, _time):
+        output = io.StringIO()
+        with mock.patch("core.progress.sys.stdout", output):
+            bar = ProgressBar(total=300, desc="Interpolating", unit="frame")
+            bar._enabled = True
+            bar.current = 150
+            bar._draw()
+        rendered = output.getvalue()
+        self.assertIn("150/300", rendered)
+        self.assertNotIn("150B", rendered)
+        self.assertIn("ETA 3min 0s", rendered)
+        self.assertNotIn("60s", rendered)
 
 
 class UpdateCheckTests(unittest.TestCase):

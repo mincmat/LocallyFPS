@@ -43,18 +43,24 @@ class ProgressBar:
             return
         elapsed = time.time() - self.start_time
         pct = self.current / self.total if self.total else 0
+        pct = max(0.0, min(1.0, pct))
         filled = int(self.width * pct)
         bar = "█" * filled + "░" * (self.width - filled)
-        eta = (elapsed / max(pct, 0.001) - elapsed) if pct > 0 else 0
-        if eta >= 3600:
-            eta_str = f"{eta/3600:.0f}h{eta%3600/60:.0f}m"
-        elif eta >= 60:
-            eta_str = f"{eta/60:.0f}min{eta%60:.0f}s"
+        if elapsed < 3.0 or pct < 0.02:
+            eta_str = _("Calculating...")
         else:
-            eta_str = f"{eta:.0f}s"
+            eta = max(0, round(elapsed / pct - elapsed))
+            eta_str = format_duration(eta)
+        if self.unit.lower() in ("b", "byte", "bytes"):
+            progress = f"{self._fmt_size(self.current)}/{self._fmt_size(self.total)}"
+        else:
+            # The activity label already says these are frames; keep the count
+            # compact and language-neutral in the stdlib fallback UI.
+            suffix = "" if self.unit.lower() in ("", "frame", "frames") else f" {self.unit}"
+            progress = f"{self.current}/{self.total}{suffix}"
         sys.stdout.write(
             f"\r{Color.bold(self.desc)}: |{bar}| "
-            f"{self._fmt_size(self.current)}/{self._fmt_size(self.total)} ({pct*100:.1f}%) "
+            f"{progress} ({pct*100:.1f}%) "
             f"ETA {eta_str}  "
         )
         sys.stdout.flush()

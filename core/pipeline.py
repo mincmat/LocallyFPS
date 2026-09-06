@@ -1,3 +1,4 @@
+import math
 import shutil
 import sys
 import time
@@ -8,11 +9,12 @@ from .config import CONFIG, DEFAULT_CONFIG
 from .console import status
 from .extract import extract_frames, count_files
 from .i18n import _
-from .interpolate import run_interpolation
+from .interpolate import _validate_generated_sequence, run_interpolation
 from .models import install_model
 from .reassemble import reassemble_video
 from .temp import TempManager
-from .disk import estimate_pipeline_storage
+from .disk import estimate_frame_storage, estimate_pipeline_storage
+from .jobs import PipelineJob
 
 PRESETS = {
     "balanced": {"encoder": "libx264", "ffmpeg_preset": "veryfast", "crf": 20,
@@ -50,8 +52,36 @@ def run_pipeline(info, target_fps, output_path, gpu_settings, model=None, intera
         or int(info.get("fps", 30) * info.get("duration", 0)),
         1,
     )
-    estimated = estimate_pipeline_storage(w, h, fc, info.get("fps", 0), target_fps)
-    tmp = TempManager(estimated_bytes=estimated)
+    source_fps = info.get("fps", 0)
+    estimated = estimate_pipeline_storage(w, h, fc, source_fps, target_fps)
+    job = PipelineJob(info["path"], target_fps, model)
+    state = job.load()
+    saved_frames = int(state.get("extracted_frames", 0) or 0)
+    extraction_checkpoint = (
+        saved_frames > 0
+        and _validate_generated_sequence(job.in_frames_dir, saved_frames)
+    )
+    saved_output_frames = int(state.get("output_frames", 0) or 0)
+    try:
+        saved_actual_fps = float(state.get("actual_fps", 0) or 0)
+    except (TypeError, ValueError):
+        saved_actual_fps = 0
+    interpolation_checkpoint = (
+        bool(state.get("interpolation_complete"))
+        and saved_output_frames > 0
+        and math.isfinite(saved_actual_fps)
+        and saved_actual_fps > 0
+        and _validate_generated_sequence(job.out_frames_dir, saved_output_frames)
+    )
+    if extraction_checkpoint:
+        target_frames = max(1, round(fc * target_fps / max(source_fps, 0.001)))
+        estimated = estimate_frame_storage(w, h, target_frames)
+    if interpolation_checkpoint:
+        estimated = 0
+    tmp = TempManager(
+        estimated_bytes=estimated,
+        root=job.root, persistent=True,
+    )
 
     if interactive:
         from .progress import PipelineBar
@@ -68,29 +98,53 @@ def run_pipeline(info, target_fps, output_path, gpu_settings, model=None, intera
         pbar = None
         pb = None
 
-    frame_count = extract_frames(
-        info["path"], tmp.in_frames_dir, info, gpu_settings,
-        progress_cb=(lambda f: pb(f * 0.30, _("Extracting frames..."))) if pb else None,
-    )
+    if interpolation_checkpoint:
+        frame_count = saved_frames or fc
+    elif extraction_checkpoint:
+        frame_count = saved_frames
+        status(_("Resuming after completed frame extraction."), "INFO")
+        if pb:
+            pb(0.30, _("Extraction checkpoint restored"))
+    else:
+        job.reset_frames(tmp.in_frames_dir)
+        frame_count = extract_frames(
+            info["path"], tmp.in_frames_dir, info, gpu_settings,
+            progress_cb=(lambda f: pb(f * 0.30, _("Extracting frames..."))) if pb else None,
+        )
+        if frame_count > 0:
+            job.update(extracted_frames=frame_count, interpolation_complete=False)
     if frame_count <= 0:
         tmp.cleanup()
         status(_("Frame extraction failed."), "ERROR")
         return False
 
-    actual_fps = run_interpolation(
-        in_frames_dir=tmp.in_frames_dir,
-        out_frames_dir=tmp.out_frames_dir,
-        model=model,
-        threads=rife_threads,
-        source_frame_count=frame_count,
-        source_fps=info["fps"],
-        target_fps=target_fps,
-        gpu_id=gpu_settings["gpu_id"],
-        gpu_name=gpu_settings.get("gpu_name"),
-        uhd=gpu_settings["uhd"],
-        rife_cpu=gpu_settings.get("rife_cpu", False),
-        progress_cb=(lambda f: pb(0.30 + f * 0.55, _("Interpolating..."))) if pb else None,
-    )
+    if interpolation_checkpoint:
+        actual_fps = saved_actual_fps
+        status(_("Resuming after completed interpolation."), "INFO")
+        if pb:
+            pb(0.85, _("Interpolation checkpoint restored"))
+    else:
+        job.update(interpolation_complete=False, output_frames=0, actual_fps=None)
+        job.reset_frames(tmp.out_frames_dir)
+        actual_fps = run_interpolation(
+            in_frames_dir=tmp.in_frames_dir,
+            out_frames_dir=tmp.out_frames_dir,
+            model=model,
+            threads=rife_threads,
+            source_frame_count=frame_count,
+            source_fps=info["fps"],
+            target_fps=target_fps,
+            gpu_id=gpu_settings["gpu_id"],
+            gpu_name=gpu_settings.get("gpu_name"),
+            uhd=gpu_settings["uhd"],
+            rife_cpu=gpu_settings.get("rife_cpu", False),
+            progress_cb=(lambda f: pb(0.30 + f * 0.55, _("Interpolating..."))) if pb else None,
+        )
+        if actual_fps:
+            job.update(
+                interpolation_complete=True, actual_fps=actual_fps,
+                output_frames=count_files(tmp.out_frames_dir, "*.png"),
+            )
     if not actual_fps:
         tmp.cleanup()
         status(_("Interpolation failed validation."), "ERROR")
@@ -114,10 +168,11 @@ def run_pipeline(info, target_fps, output_path, gpu_settings, model=None, intera
 
     if pbar:
         pbar.close()
-    tmp.cleanup()
     if final_output_path is None:
         status(_("Video export failed."), "ERROR")
         return False
+    tmp.cleanup(force=True)
+    job.cleanup()
     from .utils import format_duration
     elapsed = time.time() - start_time
     if pbar:
