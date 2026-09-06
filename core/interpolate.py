@@ -58,34 +58,55 @@ def _decode_rgb_frame(frame_path):
     return result.stdout if result.returncode == 0 and result.stdout else None
 
 
+def _gpu_requires_safe_fallback(gpu_name):
+    """Avoid a known RIFE/ncnn corruption path on Linux AMD Vulkan drivers."""
+    if not sys.platform.startswith("linux") or not gpu_name:
+        return False
+    name = gpu_name.lower()
+    return any(marker in name for marker in ("amd", "radeon", "renoir", "vega"))
+
+
+def _validation_pair_indexes(frame_count, sample_count=5):
+    """Spread validation pairs across the source instead of trusting its intro."""
+    if frame_count < 2:
+        return []
+    last = frame_count - 2
+    if last == 0:
+        return [0]
+    return sorted({round(last * i / (sample_count - 1)) for i in range(sample_count)})
+
+
 def _validate_rife_backend(in_frames_dir, model, gpu_id, uhd=False):
-    """Interpolate one pair and verify the generated image before a long run."""
-    inputs = sorted(Path(in_frames_dir).glob("*.png"))[:2]
+    """Interpolate distributed frame pairs before committing to a long run."""
+    inputs = sorted(Path(in_frames_dir).glob("*.png"))
     if len(inputs) < 2:
         return False
     with tempfile.TemporaryDirectory(prefix="locallyfps_rife_check_") as temp:
         probe_output = Path(temp) / "interpolated.png"
-        cmd = [
-            str(paths.RIFE_BIN),
-            "-0", str(inputs[0]), "-1", str(inputs[1]),
-            "-o", str(probe_output),
-            "-m", str(paths.MODELS_DIR / model),
-            "-g", str(gpu_id),
-        ]
-        if uhd:
-            cmd.append("-u")
-        try:
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
-        except (OSError, subprocess.SubprocessError):
-            return False
-        if result.returncode != 0 or not probe_output.is_file():
-            return False
-        first = _decode_rgb_frame(inputs[0])
-        second = _decode_rgb_frame(inputs[1])
-        middle = _decode_rgb_frame(probe_output)
-        if first is None or second is None or middle is None:
-            return False
-        return _interpolated_frame_is_plausible(first, second, middle)
+        for index in _validation_pair_indexes(len(inputs)):
+            cmd = [
+                str(paths.RIFE_BIN),
+                "-0", str(inputs[index]), "-1", str(inputs[index + 1]),
+                "-o", str(probe_output),
+                "-m", str(paths.MODELS_DIR / model),
+                "-g", str(gpu_id),
+            ]
+            if uhd:
+                cmd.append("-u")
+            try:
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+            except (OSError, subprocess.SubprocessError):
+                return False
+            if result.returncode != 0 or not probe_output.is_file():
+                return False
+            first = _decode_rgb_frame(inputs[index])
+            second = _decode_rgb_frame(inputs[index + 1])
+            middle = _decode_rgb_frame(probe_output)
+            if first is None or second is None or middle is None:
+                return False
+            if not _interpolated_frame_is_plausible(first, second, middle):
+                return False
+        return True
 
 
 def _build_ffmpeg_fallback_command(
@@ -113,7 +134,8 @@ def _build_ffmpeg_fallback_command(
 def run_interpolation(
     in_frames_dir, out_frames_dir, model, threads,
     source_frame_count, source_fps, target_fps,
-    gpu_id=None, uhd=False, tile_size=0, rife_cpu=False, progress_cb=None
+    gpu_id=None, gpu_name=None, uhd=False, tile_size=0, rife_cpu=False,
+    progress_cb=None
 ):
     supports_n = _model_supports_custom_frame_count(model)
     if supports_n:
@@ -131,7 +153,13 @@ def run_interpolation(
     selected_gpu = -1 if rife_cpu else (gpu_id if gpu_id is not None else 0)
     gpu_validation_failed = False
     use_ffmpeg_fallback = False
-    if not _validate_rife_backend(in_frames_dir, model, selected_gpu, uhd=uhd):
+    if selected_gpu != -1 and _gpu_requires_safe_fallback(gpu_name):
+        status(
+            _("AMD Vulkan on Linux is using the safe optical-flow backend to prevent corrupt frames."),
+            "WARN",
+        )
+        use_ffmpeg_fallback = True
+    elif not _validate_rife_backend(in_frames_dir, model, selected_gpu, uhd=uhd):
         if selected_gpu == -1:
             status(_("RIFE output validation failed on CPU."), "ERROR")
             return 0

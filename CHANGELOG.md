@@ -1,5 +1,10 @@
 # Changelog
 
+## 3.1.2 - 2026-09-05
+
+- Forced the safe optical-flow backend for AMD Vulkan GPUs on Linux after confirming delayed RIFE corruption on RADV.
+- Distributed RIFE preflight validation across the entire source instead of checking only the opening frame pair.
+
 ## 3.1.1 - 2026-09-05
 
 - Added a preflight check that detects corrupt or duplicated RIFE output before processing a full video.

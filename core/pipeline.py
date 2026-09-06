@@ -78,6 +78,7 @@ def run_pipeline(info, target_fps, output_path, gpu_settings, model=None, intera
         source_fps=info["fps"],
         target_fps=target_fps,
         gpu_id=gpu_settings["gpu_id"],
+        gpu_name=gpu_settings.get("gpu_name"),
         uhd=gpu_settings["uhd"],
         tile_size=rife_tile_size,
         rife_cpu=gpu_settings.get("rife_cpu", False),

@@ -14,7 +14,9 @@ from core.deps import safe_extract_tar, safe_extract_zip
 from core.extract import _get_pix_fmt_filter, extract_frames
 from core.interpolate import (
     _build_ffmpeg_fallback_command,
+    _gpu_requires_safe_fallback,
     _interpolated_frame_is_plausible,
+    _validation_pair_indexes,
 )
 from core.probe import probe_video_file
 from core.reassemble import _build_encode_command, _encoder_args, _validate_output
@@ -76,6 +78,15 @@ class UpdateCheckTests(unittest.TestCase):
 
 
 class InterpolationValidationTests(unittest.TestCase):
+    @mock.patch("core.interpolate.sys.platform", "linux")
+    def test_linux_amd_gpu_forces_safe_fallback(self):
+        self.assertTrue(_gpu_requires_safe_fallback("AMD Radeon Graphics (RADV RENOIR)"))
+        self.assertFalse(_gpu_requires_safe_fallback("NVIDIA GeForce RTX 4070"))
+
+    def test_validation_pairs_cover_the_whole_video(self):
+        self.assertEqual(_validation_pair_indexes(2), [0])
+        self.assertEqual(_validation_pair_indexes(102), [0, 25, 50, 75, 100])
+
     def test_optical_flow_fallback_is_motion_compensated(self):
         cmd = _build_ffmpeg_fallback_command(
             Path("input"), Path("output"), 30.0, 60.0, 120
