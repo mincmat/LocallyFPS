@@ -10,7 +10,8 @@
 - Made exports atomic so a failed encode cannot destroy an existing output file.
 - Added safe handling for lower target rates, invalid/non-finite FPS values, odd frame dimensions and non-square pixels.
 - Preserved image-based subtitles by automatically switching incompatible MP4 output to MKV.
-- Added an end-to-end safe-backend test and made CI install FFmpeg instead of silently skipping media tests.
+- Added end-to-end media tests on every CI platform, including HDR tone mapping with `ffmpeg-full` on macOS.
+- Made macOS automatically detect Homebrew's keg-only `ffmpeg-full` build and reject HDR safely when required filters are unavailable.
 - Forced the safe optical-flow backend for AMD Vulkan GPUs on Linux after confirming delayed RIFE corruption on RADV.
 - Distributed RIFE preflight validation across the entire source instead of checking only the opening frame pair.
 - Added a preflight check that detects corrupt or duplicated RIFE output before processing a full video.

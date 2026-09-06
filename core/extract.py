@@ -112,6 +112,18 @@ def _get_extraction_filter(info):
     return ",".join(value for value in filters if value)
 
 
+def _supports_hdr_tonemapping(ffmpeg_bin):
+    try:
+        result = subprocess.run(
+            [ffmpeg_bin, "-hide_banner", "-filters"], capture_output=True,
+            text=True, timeout=10,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    filters = result.stdout + result.stderr
+    return "zscale" in filters and "tonemap" in filters
+
+
 def extract_frames(video_path, frames_dir, info=None, gpu_settings=None, progress_cb=None):
     if info:
         w = max(info.get("width", 1920), 1920)
@@ -125,6 +137,18 @@ def extract_frames(video_path, frames_dir, info=None, gpu_settings=None, progres
         total_est = max(int(info.get("fps", 30) * info.get("duration", 60)), 100)
 
     ffmpeg_bin = _resolve_ffmpeg_bin()
+
+    if (info and info.get("color_transfer") in ("smpte2084", "arib-std-b67")
+            and not _supports_hdr_tonemapping(ffmpeg_bin)):
+        hint = ""
+        if paths.OS_NAME == "macos":
+            hint = "\n" + _("Install the required build with: brew install ffmpeg-full")
+        status(
+            _("This FFmpeg build cannot safely tone-map HDR video (zscale/tonemap missing).")
+            + hint,
+            "ERROR",
+        )
+        return 0
 
     pix_fmt_filter = _get_extraction_filter(info)
 

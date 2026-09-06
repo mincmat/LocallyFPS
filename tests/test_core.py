@@ -242,6 +242,22 @@ class ExtractionTests(unittest.TestCase):
         self.assertIn(",tonemap=tonemap=hable", value)
         self.assertNotIn("zscale=p=bt709:tonemap", value)
 
+    @mock.patch("core.extract._supports_hdr_tonemapping", return_value=False)
+    def test_hdr_is_rejected_when_required_filters_are_missing(self, _supported):
+        with tempfile.TemporaryDirectory() as temp:
+            frames = Path(temp) / "frames"
+            frames.mkdir()
+            info = {
+                "color_transfer": "smpte2084", "width": 64, "height": 64,
+                "frame_count": 1, "fps": 24, "duration": 1,
+            }
+            self.assertEqual(
+                extract_frames(Path(temp) / "missing.mkv", frames, info,
+                               progress_cb=lambda _: None),
+                0,
+            )
+            self.assertEqual(list(frames.iterdir()), [])
+
     def test_timestamps_are_normalized_before_frame_extraction(self):
         value = _get_extraction_filter({"is_vfr": False, "fps": 24000 / 1001})
         self.assertIn("fps=23.976", value)

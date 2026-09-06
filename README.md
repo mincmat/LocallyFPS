@@ -25,7 +25,7 @@ LocallyFPS uses the **RIFE** (Real-Time Intermediate Flow Estimation) AI model, 
 - **10 languages** — English, Español, Deutsch, Français, Português, Русский, العربية, 中文, 日本語, 한국어
 - **Interactive TUI** with raw keyboard input on Linux/macOS
 - **CLI mode** for scripting and batch processing
-- **Zero dependencies to install manually** — ffmpeg and RIFE are auto-downloaded on first run
+- **Guided dependency setup** — ffmpeg and RIFE are auto-downloaded on Linux/Windows; macOS uses Homebrew's feature-complete FFmpeg build
 - **Encoder fallback chain** — if your preferred encoder fails, it tries alternatives automatically
 - **Atomic validated exports** — existing outputs survive failures; FPS, frames, duration, audio and decoding are checked
 - **SHA-256 verification** for application updates and local dependency integrity
@@ -51,7 +51,9 @@ start.bat
 ./start.command
 ```
 
-That's it. The first run will download ffmpeg and the RIFE model automatically.
+On Linux and Windows, the first run downloads ffmpeg and the RIFE model automatically.
+On macOS, install the feature-complete FFmpeg build once with
+`brew install ffmpeg-full`; LocallyFPS detects its keg-only path automatically.
 
 ### Interactive Mode
 
@@ -104,7 +106,7 @@ Input video (H.264, H.265, etc.)
 | **Vulkan driver** | NVIDIA proprietary recommended. Open-source drivers work too. |
 | **Python** | 3.10+ (only stdlib + optional `tqdm`) |
 | **Disk space** | Varies — the app estimates and warns before processing |
-| **ffmpeg** | Auto-downloaded if not found on your system |
+| **ffmpeg** | Auto-downloaded on Linux/Windows; on macOS run `brew install ffmpeg-full` (required for safe HDR tone mapping) |
 
 ### GPU Support
 

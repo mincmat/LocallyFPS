@@ -28,6 +28,14 @@ fi
 
 mkdir -p "$BASE_DIR"/{deps/ffmpeg,deps/rife,models,cache,config,videos/original,videos/enhanced}
 
+# ffmpeg-full is keg-only in Homebrew, so it may not be on PATH automatically.
+for FFMPEG_FULL_BIN in /opt/homebrew/opt/ffmpeg-full/bin /usr/local/opt/ffmpeg-full/bin; do
+    if [ -x "$FFMPEG_FULL_BIN/ffmpeg" ] && [ -x "$FFMPEG_FULL_BIN/ffprobe" ]; then
+        export PATH="$FFMPEG_FULL_BIN:$PATH"
+        break
+    fi
+done
+
 chmod +x "$BASE_DIR/deps/ffmpeg/ffmpeg" "$BASE_DIR/deps/ffmpeg/ffprobe" "$BASE_DIR/deps/rife/rife-ncnn-vulkan" 2>/dev/null || true
 
 exec "$PYTHON" "$ENHANCER" "$@"

@@ -1,6 +1,7 @@
 import os
 import shutil
 import stat
+import subprocess
 import tarfile
 import tempfile
 import time
@@ -133,11 +134,40 @@ def _maybe_chmod(path):
         pass
 
 
+def _find_system_ffmpeg_pair():
+    """Prefer Homebrew's feature-complete, keg-only FFmpeg on macOS."""
+    candidates = []
+    if paths.OS_NAME == "macos":
+        brew = shutil.which("brew")
+        if brew:
+            try:
+                result = subprocess.run(
+                    [brew, "--prefix", "ffmpeg-full"], capture_output=True,
+                    text=True, timeout=5,
+                )
+                if result.returncode == 0 and result.stdout.strip():
+                    candidates.append(Path(result.stdout.strip()) / "bin")
+            except (OSError, subprocess.SubprocessError):
+                pass
+        candidates.extend((
+            Path("/opt/homebrew/opt/ffmpeg-full/bin"),
+            Path("/usr/local/opt/ffmpeg-full/bin"),
+        ))
+    for directory in candidates:
+        ffmpeg = directory / f"ffmpeg{paths.BIN_EXT}"
+        ffprobe = directory / f"ffprobe{paths.BIN_EXT}"
+        if ffmpeg.is_file() and ffprobe.is_file():
+            return str(ffmpeg), str(ffprobe)
+    return (
+        shutil.which(f"ffmpeg{paths.BIN_EXT}") or shutil.which("ffmpeg"),
+        shutil.which(f"ffprobe{paths.BIN_EXT}") or shutil.which("ffprobe"),
+    )
+
+
 def _setup_system_paths():
     """Check system PATH for ffmpeg/ffprobe/rife and set paths if found."""
     if not paths.FFMPEG_BIN.is_file() or not paths.FFPROBE_BIN.is_file():
-        sys_ffmpeg = shutil.which(f"ffmpeg{paths.BIN_EXT}") or shutil.which("ffmpeg")
-        sys_ffprobe = shutil.which(f"ffprobe{paths.BIN_EXT}") or shutil.which("ffprobe")
+        sys_ffmpeg, sys_ffprobe = _find_system_ffmpeg_pair()
         if sys_ffmpeg and sys_ffprobe:
             paths.FFMPEG_BIN = Path(sys_ffmpeg)
             paths.FFPROBE_BIN = Path(sys_ffprobe)
@@ -180,8 +210,7 @@ def ensure_ffmpeg(auto_yes=False, bar=None):
         if not integrity_failed:
             return True
 
-    sys_ffmpeg = shutil.which(f"ffmpeg{paths.BIN_EXT}") or shutil.which("ffmpeg")
-    sys_ffprobe = shutil.which(f"ffprobe{paths.BIN_EXT}") or shutil.which("ffprobe")
+    sys_ffmpeg, sys_ffprobe = _find_system_ffmpeg_pair()
     if sys_ffmpeg and sys_ffprobe:
         paths.FFMPEG_BIN = Path(sys_ffmpeg)
         paths.FFPROBE_BIN = Path(sys_ffprobe)
@@ -290,7 +319,7 @@ def _show_manual_install_hint(tool):
     if "ffmpeg" in tool:
         dest = paths._FFMPEG_DIR
         if paths.OS_NAME == "macos":
-            hint = _("Install via: brew install ffmpeg")
+            hint = _("Install via: brew install ffmpeg-full")
         else:
             hint = _("Download from: https://johnvansickle.com/ffmpeg/")
     else:
