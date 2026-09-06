@@ -247,29 +247,25 @@ class ExtractionTests(unittest.TestCase):
         self.assertIn("fps=23.976", value)
         self.assertTrue(value.endswith("format=rgb24"))
 
-    def test_hevc_10bit_hdr_extraction(self):
-        encoders = subprocess.run(
-            [str(paths.FFMPEG_BIN), "-encoders"], capture_output=True, text=True
-        ).stdout
+    def test_10bit_hdr_extraction(self):
         filters = subprocess.run(
             [str(paths.FFMPEG_BIN), "-filters"], capture_output=True, text=True
         ).stdout
-        if "libx265" not in encoders or "zscale" not in filters or "tonemap" not in filters:
-            self.skipTest("FFmpeg lacks libx265/zscale/tonemap")
+        if "zscale" not in filters or "tonemap" not in filters:
+            self.fail("FFmpeg lacks the zscale/tonemap filters required for HDR input")
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            source = root / "hevc10.mkv"
+            source = root / "hdr10.mkv"
             frames = root / "frames"
             frames.mkdir()
             subprocess.run([
                 str(paths.FFMPEG_BIN), "-v", "error", "-y", "-f", "lavfi", "-i",
                 "testsrc2=size=96x64:rate=24:duration=0.25", "-pix_fmt", "yuv420p10le",
                 "-color_primaries", "bt2020", "-color_trc", "smpte2084",
-                "-colorspace", "bt2020nc", "-c:v", "libx265", "-x265-params",
-                "log-level=error", str(source),
+                "-colorspace", "bt2020nc", "-c:v", "ffv1", "-level", "3", str(source),
             ], stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
             info = probe_video_file(source)
-            self.assertEqual(info["codec"], "hevc")
+            self.assertEqual(info["codec"], "ffv1")
             self.assertEqual(info["pix_fmt"], "yuv420p10le")
             count = extract_frames(source, frames, info, progress_cb=lambda _: None)
             self.assertGreater(count, 0)
