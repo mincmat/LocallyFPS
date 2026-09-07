@@ -93,6 +93,19 @@ def install_model(model_name):
             manifest.record_dir(model_name, model_name, model_dir)
             return True
 
+    # ensure_rife() may already have downloaded the same release archive. Reuse
+    # the model left in that extracted tree instead of downloading ~400 MB twice.
+    bundled_model = next(
+        (candidate for candidate in paths._RIFE_DIR.rglob(model_name)
+         if candidate.is_dir()),
+        None,
+    ) if paths._RIFE_DIR.is_dir() else None
+    if bundled_model is not None:
+        paths.MODELS_DIR.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(bundled_model, model_dir, dirs_exist_ok=True)
+        manifest.record_dir(model_name, model_name, model_dir)
+        return True
+
     extract_dir = _ensure_rife_release_cached()
     if not extract_dir:
         return False

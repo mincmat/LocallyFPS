@@ -36,6 +36,6 @@ def estimate_duration(frame_count, width, height, gpu_class):
 
 
 def choose_gpu_settings(width, height):
-    from platform import get_platform
+    from platforms import get_platform
     plat = get_platform()
     return plat.choose_gpu_settings(width, height)

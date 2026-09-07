@@ -9,7 +9,7 @@ from . import paths
 
 
 def _run_language_wizard():
-    from platform import get_platform
+    from platforms import get_platform
     plat = get_platform()
     print()
     i = plat.interactive_select("Select language / Seleccione idioma:",
@@ -25,7 +25,7 @@ def _run_language_wizard():
 
 
 def _run_advanced_settings():
-    from platform import get_platform
+    from platforms import get_platform
     plat = get_platform()
     encoder_presets = plat.get_encoder_presets()
     while True:
@@ -65,7 +65,7 @@ _SEPARATOR = "─── ─── ───"
 
 
 def _run_settings():
-    from platform import get_platform
+    from platforms import get_platform
     from .console import ask_yes_no
     plat = get_platform()
     original = dict(config.CONFIG)

@@ -33,7 +33,7 @@ else:
 
 
 def prompt_for_video():
-    from platform import get_platform
+    from platforms import get_platform
     plat = get_platform()
     videos_dir = paths.VIDEOS_DIR / "original"
 
@@ -293,7 +293,7 @@ def _centered_vpad(content_lines):
 def _show_language_selector():
     from .i18n import LANGUAGE_NAMES, LANG_CODES, load_translations
     from .config import save_config
-    from platform import get_platform
+    from platforms import get_platform
 
     plat = get_platform()
     term_w, term_h = shutil.get_terminal_size().columns, shutil.get_terminal_size().lines
@@ -339,7 +339,7 @@ def _show_language_selector():
 
 
 def interactive_wizard():
-    from platform import get_platform
+    from platforms import get_platform
     plat = get_platform()
 
     while True:
@@ -558,7 +558,7 @@ def main():
         _setup_system_paths()
 
     if sys.stdout.isatty() and any_dep_missing():
-        from platform import get_platform
+        from platforms import get_platform
         plat = get_platform()
         term_w, term_h = shutil.get_terminal_size().columns, shutil.get_terminal_size().lines
         sys.stdout.write("\033[2J\033[H\033[3J")

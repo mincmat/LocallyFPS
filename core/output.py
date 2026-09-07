@@ -26,3 +26,15 @@ def resolve_output_path(raw, input_path, target_fps):
         return out_path / default_name
     out_path.parent.mkdir(parents=True, exist_ok=True)
     return out_path
+
+
+def unique_output_path(path):
+    """Return a free sibling path so graphical runs never overwrite exports."""
+    path = Path(path)
+    if not path.exists():
+        return path
+    for number in range(2, 10_000):
+        candidate = path.with_name(f"{path.stem}_{number}{path.suffix}")
+        if not candidate.exists():
+            return candidate
+    raise RuntimeError("Could not choose an unused output filename.")

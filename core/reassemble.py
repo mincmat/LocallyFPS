@@ -32,7 +32,7 @@ def _detect_available_encoders():
 
 
 def _detect_gpu_vendors():
-    from platform import get_platform
+    from platforms import get_platform
     plat = get_platform()
     vendors = set()
     for _, name, _ in plat.detect_vulkan_gpus():
@@ -125,7 +125,7 @@ def _build_video_filter(codec_name, info=None):
 
 
 def _pick_best_encoder(preferred="libx264"):
-    from platform import get_platform
+    from platforms import get_platform
     plat = get_platform()
     encoder_presets = plat.get_encoder_presets()
     available = _detect_available_encoders()
@@ -334,7 +334,7 @@ def reassemble_video(
     encoder_name="libx264", crf=18, preset="medium",
     gpu_settings=None, progress_cb=None, info=None
 ):
-    from platform import get_platform
+    from platforms import get_platform
     plat = get_platform()
     encoder_presets = plat.get_encoder_presets()
 

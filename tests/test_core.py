@@ -27,6 +27,7 @@ from core.interpolate import (
     run_interpolation,
 )
 from core.jobs import PipelineJob
+from core.output import unique_output_path
 from core.pipeline import run_pipeline
 from core.progress import ProgressBar
 from core.probe import probe_video_file
@@ -365,6 +366,16 @@ class PathLayoutTests(unittest.TestCase):
             self.assertEqual(paths.LAYOUT_MODE, "legacy-portable")
             self.assertEqual(paths.DATA_DIR, app)
             self.assertEqual(video.read_bytes(), b"keep")
+
+
+class OutputPathTests(unittest.TestCase):
+    def test_gui_output_never_overwrites_an_existing_export(self):
+        with tempfile.TemporaryDirectory() as temp:
+            first = Path(temp) / "ENHANCED_60FPS_video.mp4"
+            first.write_bytes(b"existing")
+            second = unique_output_path(first)
+            self.assertEqual(second.name, "ENHANCED_60FPS_video_2.mp4")
+            self.assertEqual(first.read_bytes(), b"existing")
 
 
 class UpdateCheckTests(unittest.TestCase):

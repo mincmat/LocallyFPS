@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=LocallyFPS
+Comment=Make videos smoother with local frame interpolation
+Exec=LocallyFPS
+Icon=locallyfps
+Categories=AudioVideo;Video;
+Terminal=false
+StartupWMClass=LocallyFPS

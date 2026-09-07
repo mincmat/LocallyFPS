@@ -43,11 +43,22 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.10"
-      - run: python -m pip install --disable-pip-version-check pyinstaller
-      - run: pyinstaller --clean --onefile --name LocallyFPS fps_enhancer.py
-      - name: Smoke-test portable executable
+      - run: python -m pip install --disable-pip-version-check -r requirements-gui.txt
+      - name: Build graphical application
         shell: bash
         run: |
-          executable="dist/LocallyFPS"
-          if [ "$RUNNER_OS" = "Windows" ]; then executable="dist/LocallyFPS.exe"; fi
-          "$executable" --help
+          python -m PyInstaller --noconfirm --clean --windowed --onedir \
+            --name LocallyFPS \
+            --add-data "languages:languages" \
+            --add-data "packaging/locallyfps.svg:packaging" \
+            --hidden-import platforms.linux \
+            --hidden-import platforms.windows \
+            --hidden-import platforms.macos \
+            locallyfps_gui.py
+      - name: Smoke-test graphical application
+        shell: bash
+        run: |
+          executable="dist/LocallyFPS/LocallyFPS"
+          if [ "$RUNNER_OS" = "Windows" ]; then executable="dist/LocallyFPS/LocallyFPS.exe"; fi
+          if [ "$RUNNER_OS" = "macOS" ]; then executable="dist/LocallyFPS.app/Contents/MacOS/LocallyFPS"; fi
+          QT_QPA_PLATFORM=offscreen "$executable" --smoke-test

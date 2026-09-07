@@ -22,7 +22,10 @@ PRESETS = {
 }
 
 
-def run_pipeline(info, target_fps, output_path, gpu_settings, model=None, interactive=False):
+def run_pipeline(
+    info, target_fps, output_path, gpu_settings, model=None, interactive=False,
+    progress_cb=None,
+):
     start_time = time.time()
     user_model = model is not None
     if model is None:
@@ -96,7 +99,7 @@ def run_pipeline(info, target_fps, output_path, gpu_settings, model=None, intera
         pb = pbar.update
     else:
         pbar = None
-        pb = None
+        pb = progress_cb
 
     if interpolation_checkpoint:
         frame_count = saved_frames or fc
@@ -171,6 +174,8 @@ def run_pipeline(info, target_fps, output_path, gpu_settings, model=None, intera
     if final_output_path is None:
         status(_("Video export failed."), "ERROR")
         return False
+    if pb:
+        pb(1.0, _("Ready"))
     tmp.cleanup(force=True)
     job.cleanup()
     from .utils import format_duration

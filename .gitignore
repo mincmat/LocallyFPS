@@ -6,6 +6,9 @@ deps/
 models/
 videos/
 runtime/
+.venv*/
+build/
+dist/
 config/manifest.json
 *.log
 .DS_Store

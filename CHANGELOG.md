@@ -2,6 +2,13 @@
 
 ## 4.0.0-beta.1 - Unreleased
 
+- Add the first PySide6 desktop interface with drag-and-drop, video queue,
+  automatic FPS selection, safe output naming, live progress and an animated
+  interpolation visualization.
+- Add a reproducible Linux AppImage build for the desktop beta.
+- Rename the internal `platform` package to `platforms` so it no longer shadows
+  Python's standard library during GUI startup and packaging.
+
 - Separated read-only application resources from writable user data in preparation for the graphical desktop app.
 - Added native installed layouts for Linux/AppImage, Windows and macOS while preserving source and portable workflows.
 - Kept existing v3 portable data in place when detected, without silently moving or duplicating user videos.
