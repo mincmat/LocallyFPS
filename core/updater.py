@@ -14,8 +14,8 @@ from .colors import Color
 from .console import status, ask_yes_no
 from .i18n import _
 from .update_utils import (
-    GITHUB_API, parse_version, get_platform_base_name,
-    pick_asset, create_swap_script, launch_swap, human_size,
+    GITHUB_API, get_platform_base_name,
+    pick_asset, create_swap_script, launch_swap, human_size, version_key,
 )
 from .deps import safe_extract_zip
 
@@ -43,9 +43,9 @@ def check_for_updates():
     if not latest_tag:
         raise UpdateCheckError(_("GitHub returned a release without a version tag."))
 
-    current = parse_version(CURRENT_VERSION)
-    latest = parse_version(latest_tag)
-    if latest == (0, 0, 0) and latest_tag.lstrip("v").strip() != "0.0.0":
+    current = version_key(CURRENT_VERSION)
+    latest = version_key(latest_tag)
+    if current is None or latest is None:
         raise UpdateCheckError(
             _("The latest release has an unsupported version format.")
         )
@@ -157,6 +157,15 @@ def _prepare_update(zip_path):
 
 
 def run_updater():
+    if paths.IS_FROZEN and paths.LAYOUT_MODE in {"installed", "custom"}:
+        status(
+            _("Automatic updates are not enabled for installed beta builds yet."),
+            "WARN",
+        )
+        status(_("Download the next beta from GitHub Releases."), "INFO")
+        if sys.stdin.isatty():
+            input(f"\n  {Color.dim(_('Press Enter to continue...'))}")
+        return
     try:
         result = check_for_updates()
     except UpdateCheckError as exc:

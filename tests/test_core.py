@@ -39,8 +39,8 @@ from core.reassemble import (
     _validate_output,
     reassemble_video,
 )
-from core.update_utils import create_swap_script, parse_version
-from core.updater import UpdateCheckError, check_for_updates
+from core.update_utils import create_swap_script, parse_version, version_key
+from core.updater import UpdateCheckError, check_for_updates, run_updater
 from core.wizard import _valid_cli_target_fps, recommended_target_fps
 
 
@@ -68,6 +68,9 @@ class EncoderTests(unittest.TestCase):
     def test_short_release_version_is_semver_compatible(self):
         self.assertEqual(parse_version("v3.1"), (3, 1, 0))
         self.assertEqual(parse_version("3.1.2"), (3, 1, 2))
+        self.assertEqual(parse_version("4.0.0-beta.1"), (4, 0, 0))
+        self.assertLess(version_key("4.0.0-beta.1"), version_key("4.0.0"))
+        self.assertLess(version_key("4.0.0-beta.1"), version_key("4.0.0-beta.2"))
 
     def test_hdr_output_metadata_matches_tonemapped_sdr(self):
         info = {
@@ -279,7 +282,99 @@ class ProgressTests(unittest.TestCase):
             _configure_stdio()
 
 
+class PathLayoutTests(unittest.TestCase):
+    def setUp(self):
+        self.repo_root = Path(__file__).resolve().parent.parent
+
+    def tearDown(self):
+        paths.setup(self.repo_root, frozen=False)
+
+    def test_source_checkout_keeps_existing_portable_layout(self):
+        paths.setup(self.repo_root, frozen=False, platform_name="linux", env={})
+        self.assertEqual(paths.LAYOUT_MODE, "source")
+        self.assertEqual(paths.DATA_DIR, self.repo_root)
+        self.assertEqual(paths.VIDEOS_DIR, self.repo_root / "videos")
+
+    def test_frozen_linux_uses_xdg_folders_and_appimage_location(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            bundle = root / "mounted-app" / "usr" / "bin"
+            bundle.mkdir(parents=True)
+            outer = root / "Downloads" / "LocallyFPS.AppImage"
+            outer.parent.mkdir()
+            with mock.patch.object(paths.sys, "_MEIPASS", str(bundle), create=True):
+                paths.setup(
+                    bundle, frozen=True, platform_name="linux",
+                    home=root / "home",
+                    env={
+                        "APPIMAGE": str(outer),
+                        "XDG_DATA_HOME": str(root / "xdg-data"),
+                        "XDG_CACHE_HOME": str(root / "xdg-cache"),
+                        "XDG_CONFIG_HOME": str(root / "xdg-config"),
+                    },
+                )
+            self.assertEqual(paths.LAYOUT_MODE, "installed")
+            self.assertTrue(paths.IS_FROZEN)
+            self.assertEqual(paths.INSTALL_DIR, outer.parent)
+            self.assertEqual(paths.RESOURCE_DIR, bundle)
+            self.assertEqual(paths.DATA_DIR, root / "xdg-data" / "LocallyFPS")
+            self.assertEqual(paths.CACHE_DIR, root / "xdg-cache" / "LocallyFPS")
+            self.assertEqual(paths.CONFIG_DIR, root / "xdg-config" / "LocallyFPS")
+            self.assertEqual(paths.VIDEOS_DIR, root / "home" / "Videos" / "LocallyFPS")
+
+    def test_frozen_windows_and_macos_use_native_user_folders(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            app = root / "app"
+            app.mkdir()
+            paths.setup(
+                app, frozen=True, platform_name="windows", home=root / "user",
+                env={"LOCALAPPDATA": str(root / "local")},
+            )
+            self.assertEqual(paths.DATA_DIR, root / "local" / "LocallyFPS")
+            self.assertEqual(paths.VIDEOS_DIR, root / "user" / "Videos" / "LocallyFPS")
+            self.assertEqual(paths.FFMPEG_BIN.name, "ffmpeg.exe")
+
+            paths.setup(
+                app, frozen=True, platform_name="macos", home=root / "user", env={},
+            )
+            self.assertEqual(
+                paths.DATA_DIR,
+                root / "user" / "Library" / "Application Support" / "LocallyFPS",
+            )
+            self.assertEqual(
+                paths.CACHE_DIR,
+                root / "user" / "Library" / "Caches" / "LocallyFPS",
+            )
+            self.assertEqual(paths.VIDEOS_DIR, root / "user" / "Movies" / "LocallyFPS")
+
+    def test_existing_v3_portable_data_is_reused_without_being_moved(self):
+        with tempfile.TemporaryDirectory() as temp:
+            app = Path(temp) / "LocallyFPS-v3"
+            original = app / "videos" / "original"
+            original.mkdir(parents=True)
+            video = original / "keep.mp4"
+            video.write_bytes(b"keep")
+            paths.setup(
+                app, frozen=True, platform_name="linux",
+                home=Path(temp) / "home", env={},
+            )
+            self.assertEqual(paths.LAYOUT_MODE, "legacy-portable")
+            self.assertEqual(paths.DATA_DIR, app)
+            self.assertEqual(video.read_bytes(), b"keep")
+
+
 class UpdateCheckTests(unittest.TestCase):
+    @mock.patch("core.updater.check_for_updates")
+    def test_installed_beta_never_runs_directory_swap_updater(self, check):
+        old_frozen, old_layout = paths.IS_FROZEN, paths.LAYOUT_MODE
+        paths.IS_FROZEN, paths.LAYOUT_MODE = True, "installed"
+        try:
+            run_updater()
+        finally:
+            paths.IS_FROZEN, paths.LAYOUT_MODE = old_frozen, old_layout
+        check.assert_not_called()
+
     @mock.patch("core.updater.urllib.request.urlopen", side_effect=OSError("offline"))
     def test_network_failure_is_not_reported_as_latest_version(self, _urlopen):
         with self.assertRaises(UpdateCheckError):
@@ -304,6 +399,16 @@ class UpdateCheckTests(unittest.TestCase):
 
         self.assertEqual(result[0], "v3.2.0")
         self.assertEqual(result[2], "LocallyFPS_Linux_v3.2.zip")
+
+    @mock.patch("core.updater.CURRENT_VERSION", "4.0.0-beta.1")
+    @mock.patch("core.updater.urllib.request.urlopen")
+    def test_beta_does_not_offer_older_stable_release(self, urlopen):
+        response = mock.MagicMock()
+        response.__enter__.return_value.read.return_value = json.dumps({
+            "tag_name": "v3.0", "assets": [],
+        }).encode()
+        urlopen.return_value = response
+        self.assertIsNone(check_for_updates())
 
     @mock.patch("core.update_utils.sys.platform", "linux")
     def test_posix_update_swap_keeps_backup_and_has_rollback(self):

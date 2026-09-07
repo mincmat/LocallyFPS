@@ -248,6 +248,8 @@
   "Installation complete": "Instalación completa",
   "Installation failed": "Instalación fallida",
   "Update ready!": "¡Actualización lista!",
+  "Automatic updates are not enabled for installed beta builds yet.": "Las actualizaciones automáticas todavía no están habilitadas para las versiones beta instaladas.",
+  "Download the next beta from GitHub Releases.": "Descargá la próxima beta desde GitHub Releases.",
   "Applying update and restarting...": "Aplicando actualización y reiniciando...",
   "Yes": "Sí",
   "No": "No",

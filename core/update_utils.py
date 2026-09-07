@@ -16,11 +16,34 @@ ASSET_MAP = {
 
 def parse_version(tag):
     tag = tag.lstrip("v").strip()
-    m = re.fullmatch(r"(\d+)\.(\d+)(?:\.(\d+))?", tag)
+    m = re.fullmatch(
+        r"(\d+)\.(\d+)(?:\.(\d+))?(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?",
+        tag,
+    )
     if m:
-        major, minor, patch = m.groups()
+        major, minor, patch, _prerelease = m.groups()
         return int(major), int(minor), int(patch or 0)
     return (0, 0, 0)
+
+
+def version_key(tag):
+    """Return a SemVer-compatible key, including prerelease ordering."""
+    clean = tag.lstrip("v").strip()
+    match = re.fullmatch(
+        r"(\d+)\.(\d+)(?:\.(\d+))?(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?",
+        clean,
+    )
+    if not match:
+        return None
+    major, minor, patch, prerelease = match.groups()
+    base = int(major), int(minor), int(patch or 0)
+    if prerelease is None:
+        return base + (1, ())
+    identifiers = tuple(
+        (0, int(part)) if part.isdigit() else (1, part.lower())
+        for part in prerelease.split(".")
+    )
+    return base + (0, identifiers)
 
 
 def get_platform_name():
@@ -40,22 +63,24 @@ def get_platform_base_name():
 
 def pick_asset(assets, base_name):
     pattern = re.compile(
-        r"^" + re.escape(base_name) + r"(_v\d+(?:\.\d+)*)?\.zip$", re.IGNORECASE
+        r"^" + re.escape(base_name)
+        + r"(_v\d+(?:\.\d+)*(?:-[0-9A-Za-z.-]+)?)?\.zip$",
+        re.IGNORECASE,
     )
     matches = [a for a in assets if pattern.match(a.get("name", ""))]
     if not matches:
         return None
 
-    def version_key(asset):
-        m = re.search(r"_v(\d+(?:\.\d+)*)\.zip$", asset.get("name", ""), re.IGNORECASE)
+    def asset_version_key(asset):
+        m = re.search(
+            r"_v(\d+(?:\.\d+)*(?:-[0-9A-Za-z.-]+)?)\.zip$",
+            asset.get("name", ""), re.IGNORECASE,
+        )
         if m:
-            try:
-                return tuple(int(x) for x in m.group(1).split("."))
-            except ValueError:
-                pass
+            return version_key(m.group(1)) or ()
         return ()
 
-    return max(matches, key=version_key)
+    return max(matches, key=asset_version_key)
 
 
 def create_swap_script(old_dir, new_dir):

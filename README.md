@@ -110,6 +110,22 @@ same input, model and target FPS again automatically reuses every completed
 phase. Checkpoints are removed only after the final video has been encoded and
 validated successfully.
 
+### Data locations
+
+When running from a source checkout, LocallyFPS keeps the existing portable
+layout beside the source code. Installed builds keep writable data outside the
+application so read-only `.AppImage`, `.exe` and `.app` packages work safely:
+
+| System | Application data | Cache | Default videos |
+|--------|------------------|-------|----------------|
+| Linux | `$XDG_DATA_HOME/LocallyFPS` | `$XDG_CACHE_HOME/LocallyFPS` | `~/Videos/LocallyFPS` |
+| Windows | `%LOCALAPPDATA%\LocallyFPS` | `%LOCALAPPDATA%\LocallyFPS\cache` | `%USERPROFILE%\Videos\LocallyFPS` |
+| macOS | `~/Library/Application Support/LocallyFPS` | `~/Library/Caches/LocallyFPS` | `~/Movies/LocallyFPS` |
+
+Set `LOCALLYFPS_HOME` to choose one custom writable root, or place a
+`.locallyfps-portable` marker beside a packaged executable to keep all data
+portable. Existing v3 portable folders are detected and reused in place.
+
 ---
 
 ## Requirements
