@@ -297,7 +297,9 @@ class PathLayoutTests(unittest.TestCase):
 
     def test_frozen_linux_uses_xdg_folders_and_appimage_location(self):
         with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
+            # Windows runners may expand their short temp path and macOS
+            # canonicalizes /var to /private/var inside paths.setup().
+            root = Path(temp).resolve()
             bundle = root / "mounted-app" / "usr" / "bin"
             bundle.mkdir(parents=True)
             outer = root / "Downloads" / "LocallyFPS.AppImage"
@@ -324,7 +326,7 @@ class PathLayoutTests(unittest.TestCase):
 
     def test_frozen_windows_and_macos_use_native_user_folders(self):
         with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
+            root = Path(temp).resolve()
             app = root / "app"
             app.mkdir()
             paths.setup(
@@ -350,14 +352,15 @@ class PathLayoutTests(unittest.TestCase):
 
     def test_existing_v3_portable_data_is_reused_without_being_moved(self):
         with tempfile.TemporaryDirectory() as temp:
-            app = Path(temp) / "LocallyFPS-v3"
+            root = Path(temp).resolve()
+            app = root / "LocallyFPS-v3"
             original = app / "videos" / "original"
             original.mkdir(parents=True)
             video = original / "keep.mp4"
             video.write_bytes(b"keep")
             paths.setup(
                 app, frozen=True, platform_name="linux",
-                home=Path(temp) / "home", env={},
+                home=root / "home", env={},
             )
             self.assertEqual(paths.LAYOUT_MODE, "legacy-portable")
             self.assertEqual(paths.DATA_DIR, app)
