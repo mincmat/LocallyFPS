@@ -5,13 +5,13 @@ import subprocess
 import tarfile
 import tempfile
 import time
-import urllib.request
 import zipfile
 from pathlib import Path
 
 from . import paths
 from .console import status, ask_yes_no
 from .i18n import _
+from .network import download_file
 from .progress import DownloadProgress, DependencyBar
 from .urls import RIFE_RELEASE_URLS, FFMPEG_RELEASE_URLS
 
@@ -74,11 +74,11 @@ def download_and_extract(url, dest_dir, description="Downloading", bar=None):
                         downloaded = min(block_num * block_size, total_size)
                         pct = downloaded / total_size if total_size > 0 else 0
                         bar.update(pct, downloaded=downloaded, total=total_size)
-                    urllib.request.urlretrieve(url, archive_path, reporthook=_hook)
+                    download_file(url, archive_path, reporthook=_hook)
                 else:
                     dl = DownloadProgress(description)
                     try:
-                        urllib.request.urlretrieve(url, archive_path, reporthook=dl)
+                        download_file(url, archive_path, reporthook=dl)
                     finally:
                         dl.close()
             except KeyboardInterrupt:
@@ -121,7 +121,10 @@ def download_and_extract(url, dest_dir, description="Downloading", bar=None):
                 if attempt < RETRY_COUNT - 1:
                     time.sleep(RETRY_DELAY * (2 ** attempt))
                     continue
-                status(f"{_('Extraction failed:')} {exc}", "ERROR")
+                if bar:
+                    bar.fail(f"{_('Extraction failed:')} {exc}")
+                else:
+                    status(f"{_('Extraction failed:')} {exc}", "ERROR")
                 return False
             return True
     return False

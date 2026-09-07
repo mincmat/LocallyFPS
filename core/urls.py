@@ -1,7 +1,9 @@
 import json
 import time
 import warnings
-from urllib.request import Request, urlopen
+from urllib.request import Request
+
+from .network import open_url
 
 from . import paths
 
@@ -30,7 +32,7 @@ def _fetch_json(url, timeout=REQUEST_TIMEOUT, retries=RETRY_COUNT):
     last_err = None
     for attempt in range(retries):
         try:
-            with urlopen(req, timeout=timeout) as resp:
+            with open_url(req, timeout=timeout) as resp:
                 return json.loads(resp.read().decode())
         except Exception as exc:
             last_err = exc

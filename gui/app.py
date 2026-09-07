@@ -183,6 +183,7 @@ class EnhanceWorker(QObject):
             class DependencyProgress:
                 def __init__(inner_self, worker):
                     inner_self.worker = worker
+                    inner_self.last_error = ""
 
                 def update(inner_self, fraction, label=None, **_kwargs):
                     value = 0.02 + max(0.0, min(1.0, float(fraction))) * 0.06
@@ -194,11 +195,13 @@ class EnhanceWorker(QObject):
                     inner_self.worker.progress.emit(0.08, str(label), "Componentes listos")
 
                 def fail(inner_self, label):
+                    inner_self.last_error = str(label)
                     inner_self.worker.progress.emit(0.08, str(label), "Revisá tu conexión")
 
             dependency_progress = DependencyProgress(self)
             if not ensure_ffmpeg(auto_yes=True, bar=dependency_progress):
-                raise RuntimeError("No se pudo preparar FFmpeg.")
+                detail = dependency_progress.last_error or "Error de descarga desconocido"
+                raise RuntimeError(f"No se pudo preparar FFmpeg: {detail}")
             ensure_rife(auto_yes=True, bar=dependency_progress)
             ensure_default_model(auto_yes=True)
 
@@ -501,7 +504,14 @@ QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
 def main(argv=None):
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--smoke-test", action="store_true")
+    parser.add_argument("--network-smoke-test", action="store_true")
     args, qt_args = parser.parse_known_args(argv)
+    if args.network_smoke_test:
+        from core.network import open_url
+        with open_url("https://api.github.com/zen", timeout=15) as response:
+            if not response.read(256):
+                return 1
+        return 0
     app = QApplication([sys.argv[0], *qt_args])
     app.setApplicationName("LocallyFPS")
     app.setApplicationDisplayName("LocallyFPS")

@@ -8,6 +8,8 @@
 - Add a reproducible Linux AppImage build for the desktop beta.
 - Rename the internal `platform` package to `platforms` so it no longer shadows
   Python's standard library during GUI startup and packaging.
+- Bundle a trusted CA store so first-run FFmpeg and RIFE downloads work when an
+  AppImage built on Ubuntu runs on Fedora or another Linux distribution.
 
 - Separated read-only application resources from writable user data in preparation for the graphical desktop app.
 - Added native installed layouts for Linux/AppImage, Windows and macOS while preserving source and portable workflows.

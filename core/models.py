@@ -7,6 +7,7 @@ from . import paths
 from .console import status
 from .deps import safe_extract_zip
 from .i18n import _
+from .network import download_file
 from .progress import DownloadProgress
 from .urls import RIFE_RELEASE_URLS
 
@@ -41,8 +42,7 @@ def _ensure_rife_release_cached():
         status(_("Downloading RIFE release (one-time, ~400 MB)..."), "INFO")
         dl = DownloadProgress(_("Downloading RIFE release"))
         try:
-            import urllib.request
-            urllib.request.urlretrieve(url, cache_zip, reporthook=dl)
+            download_file(url, cache_zip, reporthook=dl)
         except KeyboardInterrupt:
             dl.close()
             status(_("Download cancelled."), "WARN")
