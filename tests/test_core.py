@@ -162,12 +162,18 @@ class InputValidationTests(unittest.TestCase):
         repaired = _validated_config({
             "language": "bad", "crf": float("nan"), "preset": "turbo",
             "model": "../../bad", "video_preset": "bad",
+            "onboarding_complete": "yes", "theme": "neon",
+            "default_target_fps": "1000", "output_directory": 42,
         })
         self.assertEqual(repaired["crf"], 16)
         self.assertEqual(repaired["preset"], "fast")
         self.assertEqual(repaired["model"], "rife-v4.6")
         self.assertEqual(repaired["video_preset"], "balanced")
         self.assertEqual(repaired["encoder_mode"], "auto")
+        self.assertFalse(repaired["onboarding_complete"])
+        self.assertEqual(repaired["theme"], "dark")
+        self.assertEqual(repaired["default_target_fps"], "auto")
+        self.assertEqual(repaired["output_directory"], "")
 
 
 class DiskEstimateTests(unittest.TestCase):

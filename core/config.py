@@ -5,6 +5,10 @@ from . import paths
 
 DEFAULT_CONFIG = {
     "language": "en",
+    "onboarding_complete": False,
+    "theme": "dark",
+    "default_target_fps": "auto",
+    "output_directory": "",
     "encoder": "libx264",
     "crf": 16,
     "preset": "fast",
@@ -21,6 +25,14 @@ def _validated_config(data):
     value = {**DEFAULT_CONFIG, **(data if isinstance(data, dict) else {})}
     if value.get("language") not in {"en", "es", "de", "fr", "pt", "ru", "ar", "zh", "ja", "ko"}:
         value["language"] = paths.DEFAULT_LANGUAGE
+    if not isinstance(value.get("onboarding_complete"), bool):
+        value["onboarding_complete"] = False
+    if value.get("theme") not in {"dark", "system"}:
+        value["theme"] = DEFAULT_CONFIG["theme"]
+    if value.get("default_target_fps") not in {"auto", "60", "120", "240"}:
+        value["default_target_fps"] = DEFAULT_CONFIG["default_target_fps"]
+    if not isinstance(value.get("output_directory"), str):
+        value["output_directory"] = ""
     if not isinstance(value.get("encoder"), str) or not value["encoder"]:
         value["encoder"] = DEFAULT_CONFIG["encoder"]
     try:

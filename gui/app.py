@@ -3,7 +3,7 @@ import math
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import QObject, QPointF, Qt, QThread, QTimer, QUrl, Signal, Slot
+from PySide6.QtCore import QObject, QPointF, Qt, QThread, QTimer, QUrl, Signal, Slot, QLocale
 from PySide6.QtGui import (
     QColor, QDesktopServices, QFont, QIcon, QLinearGradient, QPainter,
     QPen, QRadialGradient,
@@ -11,16 +11,204 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import (
     QApplication, QComboBox, QFileDialog, QFrame, QHBoxLayout, QLabel,
     QListWidget, QListWidgetItem, QMainWindow, QMessageBox, QPushButton,
-    QSizePolicy, QVBoxLayout, QWidget,
+    QSizePolicy, QStackedWidget, QVBoxLayout, QWidget, QLineEdit,
+    QProgressBar, QCheckBox, QDialog,
 )
 
 from core import paths
+from core import config
 
 
 SUPPORTED_EXTENSIONS = {
     ".mp4", ".m4v", ".mkv", ".avi", ".mov", ".webm", ".flv", ".wmv",
     ".mpg", ".mpeg", ".ts", ".mts", ".m2ts", ".ogv", ".3gp", ".vob",
 }
+
+LANGUAGES = [
+    ("Español", "es"), ("English", "en"), ("Português", "pt"),
+    ("Français", "fr"), ("Deutsch", "de"), ("中文", "zh"),
+    ("日本語", "ja"), ("한국어", "ko"), ("Русский", "ru"), ("العربية", "ar"),
+]
+
+
+class SetupWorker(QObject):
+    progress = Signal(int, str, str)
+    finished = Signal(bool, str)
+
+    @Slot()
+    def run(self):
+        try:
+            from core.deps import _setup_system_paths, ensure_ffmpeg, ensure_rife
+            from core.models import ensure_default_model
+
+            paths.ensure_dirs()
+            _setup_system_paths()
+
+            class Bar:
+                def __init__(inner_self, owner, start, span, component):
+                    inner_self.owner, inner_self.start = owner, start
+                    inner_self.span, inner_self.component = span, component
+                    inner_self.error = ""
+
+                def update(inner_self, fraction, label=None, **_kwargs):
+                    value = inner_self.start + int(max(0, min(1, float(fraction))) * inner_self.span)
+                    inner_self.owner.progress.emit(value, str(label or inner_self.component), inner_self.component)
+
+                def ok(inner_self, label):
+                    inner_self.owner.progress.emit(inner_self.start + inner_self.span, str(label), inner_self.component)
+
+                def fail(inner_self, label):
+                    inner_self.error = str(label)
+                    inner_self.owner.progress.emit(inner_self.start, str(label), inner_self.component)
+
+            ffmpeg = Bar(self, 3, 22, "FFmpeg")
+            self.progress.emit(2, "Comprobando FFmpeg…", "FFmpeg")
+            if not ensure_ffmpeg(auto_yes=True, bar=ffmpeg):
+                raise RuntimeError(ffmpeg.error or "No se pudo instalar FFmpeg")
+            rife = Bar(self, 25, 65, "Motor de IA")
+            self.progress.emit(25, "Preparando el motor de IA…", "Motor de IA")
+            if not ensure_rife(auto_yes=True, bar=rife):
+                raise RuntimeError(rife.error or "No se pudo instalar el motor de IA")
+            self.progress.emit(92, "Comprobando el modelo…", "Modelo RIFE")
+            ensure_default_model(auto_yes=True)
+            if not (paths.MODELS_DIR / "rife-v4.6").is_dir():
+                raise RuntimeError("No se pudo preparar el modelo RIFE")
+            self.progress.emit(100, "Todo está listo", "Componentes verificados")
+            self.finished.emit(True, "")
+        except Exception as exc:
+            self.finished.emit(False, str(exc))
+
+
+class SettingsDialog(QDialog):
+    repair_requested = Signal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Configuración · LocallyFPS")
+        self.setModal(True)
+        self.setMinimumSize(740, 650)
+        self.setObjectName("settingsDialog")
+        root = QVBoxLayout(self)
+        root.setContentsMargins(34, 30, 34, 30)
+        root.setSpacing(18)
+        heading = QHBoxLayout()
+        title_box = QVBoxLayout()
+        title = QLabel("Configuración")
+        title.setObjectName("headline")
+        subtitle = QLabel("Tu experiencia, sin complicaciones.")
+        subtitle.setObjectName("subtitle")
+        title_box.addWidget(title)
+        title_box.addWidget(subtitle)
+        heading.addLayout(title_box)
+        heading.addStretch()
+        root.addLayout(heading)
+
+        general = QFrame()
+        general.setObjectName("settingsSection")
+        general.setMinimumHeight(175)
+        form = QVBoxLayout(general)
+        form.setContentsMargins(24, 20, 24, 20)
+        form.setSpacing(13)
+        label = QLabel("GENERAL")
+        label.setObjectName("eyebrow")
+        form.addWidget(label)
+        self.language = self._row_combo(form, "Idioma", "El idioma de botones y mensajes", LANGUAGES,
+                                        config.CONFIG.get("language", "en"))
+        fps_items = [("Automático · recomendado", "auto"), ("60 FPS", "60"),
+                     ("120 FPS", "120"), ("240 FPS", "240")]
+        self.default_fps = self._row_combo(form, "FPS predeterminados", "Se aplica al agregar videos", fps_items,
+                                           config.CONFIG.get("default_target_fps", "auto"))
+        root.addWidget(general)
+
+        output = QFrame()
+        output.setObjectName("settingsSection")
+        output.setMinimumHeight(112)
+        output_layout = QVBoxLayout(output)
+        output_layout.setContentsMargins(24, 20, 24, 20)
+        output_layout.setSpacing(12)
+        output_label = QLabel("RESULTADOS")
+        output_label.setObjectName("eyebrow")
+        output_layout.addWidget(output_label)
+        path_row = QHBoxLayout()
+        path_text = QVBoxLayout()
+        path_text.addWidget(QLabel("Carpeta de salida"))
+        path_hint = QLabel("Vacío usa la carpeta de videos de LocallyFPS")
+        path_hint.setObjectName("muted")
+        path_text.addWidget(path_hint)
+        path_row.addLayout(path_text)
+        self.output_path = QLineEdit(config.CONFIG.get("output_directory", ""))
+        self.output_path.setPlaceholderText("Automática")
+        path_row.addWidget(self.output_path, 1)
+        choose = QPushButton("Elegir")
+        choose.setObjectName("ghostButton")
+        choose.clicked.connect(self._choose_output)
+        path_row.addWidget(choose)
+        output_layout.addLayout(path_row)
+        root.addWidget(output)
+
+        engine = QFrame()
+        engine.setObjectName("settingsSection")
+        engine_layout = QHBoxLayout(engine)
+        engine_layout.setContentsMargins(24, 18, 24, 18)
+        engine_text = QVBoxLayout()
+        engine_title = QLabel("Motor de interpolación")
+        engine_hint = QLabel("Comprobá o repará FFmpeg, RIFE y el modelo")
+        engine_hint.setObjectName("muted")
+        engine_text.addWidget(engine_title)
+        engine_text.addWidget(engine_hint)
+        engine_layout.addLayout(engine_text)
+        engine_layout.addStretch()
+        repair = QPushButton("Comprobar")
+        repair.setObjectName("ghostButton")
+        repair.clicked.connect(self._repair)
+        engine_layout.addWidget(repair)
+        root.addWidget(engine)
+        root.addStretch()
+        actions = QHBoxLayout()
+        actions.addStretch()
+        cancel = QPushButton("Cancelar")
+        cancel.setObjectName("ghostButton")
+        cancel.clicked.connect(self.reject)
+        save = QPushButton("Guardar cambios")
+        save.setObjectName("primaryButton")
+        save.clicked.connect(self._save)
+        actions.addWidget(cancel)
+        actions.addWidget(save)
+        root.addLayout(actions)
+
+    def _row_combo(self, layout, title, hint, values, selected):
+        row = QHBoxLayout()
+        text = QVBoxLayout()
+        text.addWidget(QLabel(title))
+        muted = QLabel(hint)
+        muted.setObjectName("muted")
+        text.addWidget(muted)
+        row.addLayout(text)
+        row.addStretch()
+        combo = QComboBox()
+        for name, value in values:
+            combo.addItem(name, value)
+        combo.setCurrentIndex(max(0, combo.findData(selected)))
+        combo.setMinimumWidth(230)
+        row.addWidget(combo)
+        layout.addLayout(row)
+        return combo
+
+    def _choose_output(self):
+        selected = QFileDialog.getExistingDirectory(self, "Carpeta de resultados", self.output_path.text() or str(Path.home()))
+        if selected:
+            self.output_path.setText(selected)
+
+    def _repair(self):
+        self.accept()
+        self.repair_requested.emit()
+
+    def _save(self):
+        config.CONFIG["language"] = self.language.currentData()
+        config.CONFIG["default_target_fps"] = self.default_fps.currentData()
+        config.CONFIG["output_directory"] = self.output_path.text().strip()
+        config.save_config()
+        self.accept()
 
 
 class MagicCanvas(QWidget):
@@ -216,7 +404,9 @@ class EnhanceWorker(QObject):
                     self.item_finished.emit(str(video), False, "Formato no reconocido")
                     continue
                 target = self.target_fps or recommended_target_fps(info["fps"])
-                output = unique_output_path(resolve_output_path("", video, target))
+                output = unique_output_path(resolve_output_path(
+                    config.CONFIG.get("output_directory", ""), video, target,
+                ))
                 gpu = choose_gpu_settings(
                     info.get("display_width", info["width"]),
                     info.get("display_height", info["height"]),
@@ -256,12 +446,24 @@ class MainWindow(QMainWindow):
         self.output_paths = []
         self.worker = None
         self.thread = None
+        self.setup_worker = None
+        self.setup_thread = None
         self._build_ui()
+        if not config.CONFIG.get("onboarding_complete", False) or paths.any_dep_missing():
+            self.pages.setCurrentWidget(self.onboarding_page)
+        else:
+            self.pages.setCurrentWidget(self.main_page)
 
     def _build_ui(self):
-        root = QWidget()
-        root.setObjectName("root")
-        self.setCentralWidget(root)
+        self.pages = QStackedWidget()
+        self.pages.setObjectName("root")
+        self.setCentralWidget(self.pages)
+        self.onboarding_page = self._build_onboarding()
+        self.main_page = QWidget()
+        self.main_page.setObjectName("root")
+        self.pages.addWidget(self.onboarding_page)
+        self.pages.addWidget(self.main_page)
+        root = self.main_page
         outer = QVBoxLayout(root)
         outer.setContentsMargins(42, 32, 42, 34)
         outer.setSpacing(24)
@@ -275,58 +477,84 @@ class MainWindow(QMainWindow):
         header.addWidget(brand)
         header.addWidget(beta)
         header.addStretch()
-        tagline = QLabel("Más fluidez. Cero complicaciones.")
-        tagline.setObjectName("muted")
-        header.addWidget(tagline)
+        self.theme_button = QPushButton("☾")
+        self.theme_button.setObjectName("iconButton")
+        self.theme_button.setToolTip("Apariencia")
+        self.theme_button.clicked.connect(self._theme_notice)
+        header.addWidget(self.theme_button)
+        settings_button = QPushButton("⚙")
+        settings_button.setObjectName("iconButton")
+        settings_button.setToolTip("Configuración")
+        settings_button.clicked.connect(self._show_settings)
+        header.addWidget(settings_button)
         outer.addLayout(header)
 
-        content = QHBoxLayout()
-        content.setSpacing(24)
+        workspace = QFrame()
+        workspace.setObjectName("workspace")
+        content = QHBoxLayout(workspace)
+        content.setContentsMargins(28, 28, 28, 28)
+        content.setSpacing(22)
 
         left = QFrame()
-        left.setObjectName("panel")
+        left.setObjectName("flowCard")
         left_layout = QVBoxLayout(left)
-        left_layout.setContentsMargins(28, 26, 28, 28)
-        left_layout.setSpacing(18)
-        intro = QLabel("Convertí movimiento en magia")
-        intro.setObjectName("headline")
-        sub = QLabel("Elegí uno o varios videos. LocallyFPS detecta tu equipo y decide la forma más segura de interpolarlos.")
-        sub.setWordWrap(True)
-        sub.setObjectName("subtitle")
-        left_layout.addWidget(intro)
-        left_layout.addWidget(sub)
+        left_layout.setContentsMargins(22, 22, 22, 22)
+        left_layout.setSpacing(14)
+        videos_title = QLabel("TUS VIDEOS")
+        videos_title.setObjectName("eyebrow")
+        left_layout.addWidget(videos_title)
+        self.queue = QListWidget()
+        self.queue.setObjectName("queue")
+        self.queue.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        left_layout.addWidget(self.queue, 1)
         self.drop = DropCard()
         self.drop.files_dropped.connect(self._choose_or_add)
         left_layout.addWidget(self.drop)
+        self.clear_button = QPushButton("Limpiar lista")
+        self.clear_button.setObjectName("ghostButton")
+        self.clear_button.clicked.connect(self._clear)
+        left_layout.addWidget(self.clear_button)
+        content.addWidget(left, 1)
 
-        controls = QHBoxLayout()
-        fps_label = QLabel("Objetivo")
-        fps_label.setObjectName("fieldLabel")
+        middle = QFrame()
+        middle.setObjectName("flowCard")
+        middle_layout = QVBoxLayout(middle)
+        middle_layout.setContentsMargins(24, 24, 24, 24)
+        middle_layout.setSpacing(18)
+        middle_layout.addStretch()
+        fps_icon = QLabel("AUTO")
+        fps_icon.setObjectName("flowIcon")
+        fps_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.fps_value = fps_icon
+        middle_layout.addWidget(self.fps_value)
+        fps_label = QLabel("Elegí los FPS de destino")
+        fps_label.setObjectName("statusTitle")
+        fps_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        middle_layout.addWidget(fps_label)
         self.fps_combo = QComboBox()
         self.fps_combo.addItem("Automático · recomendado", None)
         self.fps_combo.addItem("60 FPS", 60.0)
         self.fps_combo.addItem("120 FPS", 120.0)
         self.fps_combo.addItem("240 FPS", 240.0)
-        controls.addWidget(fps_label)
-        controls.addWidget(self.fps_combo, 1)
-        self.clear_button = QPushButton("Limpiar")
-        self.clear_button.setObjectName("ghostButton")
-        self.clear_button.clicked.connect(self._clear)
-        controls.addWidget(self.clear_button)
-        left_layout.addLayout(controls)
-
+        saved_fps = config.CONFIG.get("default_target_fps", "auto")
+        fps_index = 0 if saved_fps == "auto" else self.fps_combo.findData(float(saved_fps))
+        self.fps_combo.setCurrentIndex(max(0, fps_index))
+        self.fps_combo.currentIndexChanged.connect(self._update_fps_value)
+        self._update_fps_value()
+        self.fps_combo.setMinimumHeight(50)
+        middle_layout.addWidget(self.fps_combo)
         self.start_button = QPushButton("✦  Mejorar videos")
         self.start_button.setObjectName("primaryButton")
         self.start_button.setMinimumHeight(55)
         self.start_button.clicked.connect(self._start)
-        left_layout.addWidget(self.start_button)
-        content.addWidget(left, 3)
+        middle_layout.addWidget(self.start_button)
+        middle_layout.addStretch()
+        content.addWidget(middle, 1)
 
         right = QFrame()
-        right.setObjectName("panel")
-        right.setMinimumWidth(340)
+        right.setObjectName("flowCard")
         right_layout = QVBoxLayout(right)
-        right_layout.setContentsMargins(24, 20, 24, 24)
+        right_layout.setContentsMargins(22, 18, 22, 22)
         right_layout.setSpacing(10)
         self.magic = MagicCanvas()
         right_layout.addWidget(self.magic)
@@ -339,20 +567,161 @@ class MainWindow(QMainWindow):
         self.status_detail.setWordWrap(True)
         right_layout.addWidget(self.status_title)
         right_layout.addWidget(self.status_detail)
-        queue_title = QLabel("COLA")
-        queue_title.setObjectName("eyebrow")
-        right_layout.addWidget(queue_title)
-        self.queue = QListWidget()
-        self.queue.setObjectName("queue")
-        self.queue.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        right_layout.addWidget(self.queue)
+        right_layout.addStretch()
         self.open_button = QPushButton("Abrir carpeta de resultados")
         self.open_button.setObjectName("ghostButton")
         self.open_button.setVisible(False)
         self.open_button.clicked.connect(self._open_results)
         right_layout.addWidget(self.open_button)
-        content.addWidget(right, 2)
-        outer.addLayout(content, 1)
+        content.addWidget(right, 1)
+        outer.addWidget(workspace, 1)
+
+    def _build_onboarding(self):
+        page = QWidget()
+        page.setObjectName("root")
+        outer = QVBoxLayout(page)
+        outer.setContentsMargins(64, 42, 64, 48)
+        header = QHBoxLayout()
+        brand = QLabel("Locally<span style='color:#a78bfa'>FPS</span>")
+        brand.setObjectName("brand")
+        brand.setTextFormat(Qt.TextFormat.RichText)
+        badge = QLabel("4.0  BETA")
+        badge.setObjectName("beta")
+        header.addWidget(brand)
+        header.addWidget(badge)
+        header.addStretch()
+        outer.addLayout(header)
+        outer.addStretch()
+
+        card = QFrame()
+        card.setObjectName("setupCard")
+        card.setMaximumWidth(760)
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(54, 42, 54, 42)
+        card_layout.setSpacing(18)
+        self.setup_steps = QLabel("1  ●────────○  2")
+        self.setup_steps.setObjectName("steps")
+        self.setup_steps.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        card_layout.addWidget(self.setup_steps)
+        self.setup_title = QLabel("Hagamos que LocallyFPS se sienta tuyo")
+        self.setup_title.setObjectName("setupTitle")
+        self.setup_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        card_layout.addWidget(self.setup_title)
+        self.setup_subtitle = QLabel("Elegí el idioma de la aplicación. Podés cambiarlo cuando quieras desde Configuración.")
+        self.setup_subtitle.setObjectName("subtitle")
+        self.setup_subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.setup_subtitle.setWordWrap(True)
+        card_layout.addWidget(self.setup_subtitle)
+        self.setup_content = QStackedWidget()
+        language_page = QWidget()
+        language_layout = QVBoxLayout(language_page)
+        language_layout.setContentsMargins(45, 10, 45, 0)
+        self.language_combo = QComboBox()
+        for name, code in LANGUAGES:
+            self.language_combo.addItem(name, code)
+        language = config.CONFIG.get("language", paths.DEFAULT_LANGUAGE)
+        if not paths.CONFIG_PATH.exists() or not config.CONFIG.get("onboarding_complete"):
+            locale_language = QLocale.system().name().split("_")[0]
+            if locale_language in {code for _, code in LANGUAGES}:
+                language = locale_language
+        current = self.language_combo.findData(language)
+        self.language_combo.setCurrentIndex(max(0, current))
+        self.language_combo.setMinimumHeight(52)
+        language_layout.addWidget(self.language_combo)
+        language_layout.addStretch()
+        self.setup_content.addWidget(language_page)
+
+        dependency_page = QWidget()
+        dependency_layout = QVBoxLayout(dependency_page)
+        dependency_layout.setContentsMargins(20, 8, 20, 0)
+        dependency_layout.setSpacing(12)
+        self.setup_component = QLabel("Listo para comprobar tu equipo")
+        self.setup_component.setObjectName("statusTitle")
+        self.setup_component.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        dependency_layout.addWidget(self.setup_component)
+        self.setup_progress = QProgressBar()
+        self.setup_progress.setRange(0, 100)
+        self.setup_progress.setValue(0)
+        self.setup_progress.setTextVisible(False)
+        dependency_layout.addWidget(self.setup_progress)
+        self.setup_detail = QLabel("FFmpeg · Motor de IA · Modelo RIFE")
+        self.setup_detail.setObjectName("muted")
+        self.setup_detail.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.setup_detail.setWordWrap(True)
+        dependency_layout.addWidget(self.setup_detail)
+        dependency_layout.addStretch()
+        self.setup_content.addWidget(dependency_page)
+        card_layout.addWidget(self.setup_content, 1)
+        self.setup_button = QPushButton("Continuar  →")
+        self.setup_button.setObjectName("primaryButton")
+        self.setup_button.setMinimumHeight(54)
+        self.setup_button.clicked.connect(self._advance_setup)
+        card_layout.addWidget(self.setup_button)
+        centered = QHBoxLayout()
+        centered.addStretch()
+        centered.addWidget(card, 1)
+        centered.addStretch()
+        outer.addLayout(centered, 4)
+        outer.addStretch()
+        return page
+
+    def _advance_setup(self):
+        if self.setup_content.currentIndex() == 0:
+            config.CONFIG["language"] = self.language_combo.currentData()
+            config.save_config()
+            self.setup_content.setCurrentIndex(1)
+            self.setup_steps.setText("1  ●────────●  2")
+            self.setup_title.setText("Preparando la magia")
+            self.setup_subtitle.setText("Descargaremos y verificaremos los componentes necesarios. Esto ocurre una sola vez.")
+            self.setup_button.setText("Preparar LocallyFPS")
+            return
+        if self.setup_thread and self.setup_thread.isRunning():
+            return
+        if self.setup_progress.value() == 100:
+            self.pages.setCurrentWidget(self.main_page)
+            return
+        self._run_setup()
+
+    def _run_setup(self):
+        self.setup_button.setEnabled(False)
+        self.setup_button.setText("Preparando…")
+        self.setup_progress.setValue(1)
+        self.setup_thread = QThread(self)
+        self.setup_worker = SetupWorker()
+        self.setup_worker.moveToThread(self.setup_thread)
+        self.setup_thread.started.connect(self.setup_worker.run)
+        self.setup_worker.progress.connect(self._on_setup_progress)
+        self.setup_worker.finished.connect(self._on_setup_finished)
+        self.setup_worker.finished.connect(self.setup_thread.quit)
+        self.setup_thread.finished.connect(self.setup_worker.deleteLater)
+        self.setup_thread.finished.connect(self.setup_thread.deleteLater)
+        self.setup_thread.start()
+
+    @Slot(int, str, str)
+    def _on_setup_progress(self, value, label, component):
+        self.setup_progress.setValue(value)
+        self.setup_component.setText(label)
+        self.setup_detail.setText(component)
+
+    @Slot(bool, str)
+    def _on_setup_finished(self, ok, error):
+        self.setup_button.setEnabled(True)
+        if ok:
+            config.CONFIG["onboarding_complete"] = True
+            config.save_config()
+            self.setup_progress.setValue(100)
+            self.setup_title.setText("Todo listo para crear fluidez")
+            self.setup_subtitle.setText("Tu equipo está preparado. LocallyFPS elegirá automáticamente la opción más segura para cada video.")
+            self.setup_component.setText("✓  Componentes verificados")
+            self.setup_detail.setText("No necesitás configurar nada más")
+            self.setup_button.setText("Empezar  ✦")
+        else:
+            self.setup_title.setText("Necesitamos un intento más")
+            self.setup_component.setText("No se pudo completar la preparación")
+            self.setup_detail.setText(error)
+            self.setup_button.setText("Reintentar")
+        self.setup_worker = None
+        self.setup_thread = None
 
     @Slot(list)
     def _choose_or_add(self, paths_from_drop):
@@ -455,8 +824,33 @@ class MainWindow(QMainWindow):
         directory = Path(self.output_paths[-1]).parent if self.output_paths else paths.VIDEOS_DIR / "enhanced"
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(directory)))
 
+    def _update_fps_value(self, *_args):
+        value = self.fps_combo.currentData()
+        self.fps_value.setText("AUTO" if value is None else str(int(value)))
+
+    def _show_settings(self):
+        dialog = SettingsDialog(self)
+        dialog.repair_requested.connect(self._show_repair)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            saved_fps = config.CONFIG.get("default_target_fps", "auto")
+            index = 0 if saved_fps == "auto" else self.fps_combo.findData(float(saved_fps))
+            self.fps_combo.setCurrentIndex(max(0, index))
+
+    def _show_repair(self):
+        self.pages.setCurrentWidget(self.onboarding_page)
+        self.setup_content.setCurrentIndex(1)
+        self.setup_steps.setText("COMPROBACIÓN DEL MOTOR")
+        self.setup_title.setText("Comprobando la magia")
+        self.setup_subtitle.setText("Verificaremos los componentes y repararemos automáticamente lo que falte.")
+        self.setup_progress.setValue(0)
+        self.setup_button.setText("Comprobar ahora")
+
+    def _theme_notice(self):
+        QMessageBox.information(self, "Apariencia", "El modo oscuro es el diseño de esta beta. El modo del sistema llegará durante la v4.")
+
     def closeEvent(self, event):
-        if self.thread and self.thread.isRunning():
+        if ((self.thread and self.thread.isRunning()) or
+                (self.setup_thread and self.setup_thread.isRunning())):
             QMessageBox.information(
                 self, "LocallyFPS está trabajando",
                 "Esperá a que termine el video actual antes de cerrar la aplicación.",
@@ -468,7 +862,10 @@ class MainWindow(QMainWindow):
 
 STYLE = """
 QWidget#root { background: #080b16; color: #f8fafc; }
+QStackedWidget#root { background: #080b16; }
 QWidget { font-family: Inter, "Segoe UI", sans-serif; font-size: 14px; }
+QLabel { color: #eef2f7; }
+QDialog#settingsDialog { background: #090c16; color: #f8fafc; }
 QLabel#brand { font-size: 27px; font-weight: 800; color: #f8fafc; }
 QLabel#beta { color: #c4b5fd; background: rgba(139,92,246,0.18); border: 1px solid rgba(167,139,250,0.36); border-radius: 10px; padding: 4px 9px; font-size: 10px; font-weight: 700; }
 QLabel#headline { font-size: 28px; font-weight: 750; color: #ffffff; }
@@ -476,11 +873,18 @@ QLabel#subtitle { color: #9aa5ba; font-size: 14px; line-height: 1.4; }
 QLabel#muted { color: #7f8aa3; font-size: 12px; }
 QLabel#fieldLabel, QLabel#eyebrow { color: #98a3ba; font-size: 11px; font-weight: 700; letter-spacing: 1px; }
 QLabel#statusTitle { color: #f8fafc; font-size: 18px; font-weight: 700; }
+QLabel#setupTitle { color: #ffffff; font-size: 26px; font-weight: 750; }
+QLabel#steps { color: #a78bfa; font-size: 13px; font-weight: 700; letter-spacing: 2px; }
 QFrame#panel { background: rgba(17,22,40,0.94); border: 1px solid #202943; border-radius: 22px; }
+QFrame#workspace { background: #202431; border: 1px solid #303647; border-radius: 25px; }
+QFrame#flowCard { background: #343947; border: 1px solid #424858; border-radius: 20px; }
+QFrame#setupCard { background: #111628; border: 1px solid #29324c; border-radius: 26px; }
+QFrame#settingsSection { background: #111628; border: 1px solid #252e47; border-radius: 16px; }
 QFrame#dropCard { background: rgba(11,15,30,0.72); border: 1px dashed #475375; border-radius: 18px; }
 QFrame#dropCard:hover, QFrame#dropCard[dragging="true"] { background: rgba(92,63,180,0.16); border: 1px solid #8b5cf6; }
 QLabel#dropIcon { color: #a78bfa; font-size: 38px; }
 QLabel#dropTitle { color: #eef2ff; font-size: 17px; font-weight: 700; }
+QLabel#flowIcon { color: #f8fafc; font-size: 42px; font-weight: 500; }
 QComboBox { color: #eef2ff; background: #0d1325; border: 1px solid #2a3555; border-radius: 11px; padding: 10px 14px; min-height: 20px; }
 QComboBox:hover { border-color: #7255cc; }
 QComboBox::drop-down { border: 0; width: 28px; }
@@ -492,6 +896,12 @@ QPushButton#primaryButton:pressed { background: #6342c5; }
 QPushButton#primaryButton:disabled { color: #727b91; background: #252b3c; }
 QPushButton#ghostButton { color: #b9c2d6; background: #151c31; border: 1px solid #293451; }
 QPushButton#ghostButton:hover { color: white; border-color: #6650ae; background: #1b2340; }
+QPushButton#iconButton { color: #f8fafc; background: transparent; font-size: 27px; padding: 5px; min-width: 42px; }
+QPushButton#iconButton:hover { color: #c4b5fd; background: #171b29; }
+QLineEdit { color: #eef2ff; background: #0d1325; border: 1px solid #2a3555; border-radius: 10px; padding: 10px 12px; }
+QLineEdit:focus { border-color: #8060dc; }
+QProgressBar { background: #090d19; border: 1px solid #28324e; border-radius: 7px; height: 13px; }
+QProgressBar::chunk { background: #8059e8; border-radius: 6px; }
 QListWidget#queue { color: #cbd5e1; background: transparent; border: 0; outline: 0; }
 QListWidget#queue::item { background: #0e1426; border: 1px solid #202a45; border-radius: 9px; margin: 3px 0; padding: 9px 5px; }
 QListWidget#queue::item:selected { background: #18213a; color: white; border-color: #554399; }
@@ -517,6 +927,8 @@ def main(argv=None):
     app.setApplicationDisplayName("LocallyFPS")
     app.setStyle("Fusion")
     app.setStyleSheet(STYLE)
+    paths.ensure_dirs()
+    config.load_config()
     icon = paths.RESOURCE_DIR / "packaging" / "locallyfps.svg"
     if icon.exists():
         app.setWindowIcon(QIcon(str(icon)))
