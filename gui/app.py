@@ -41,7 +41,7 @@ GUI_TEXT = {
     "en": {
         "videos": "YOUR VIDEOS", "drop": "Add or drop videos here",
         "drop_hint": "click to select · MP4, MKV, MOV, WebM and more",
-        "clear": "Clear list", "fps": "Set the target FPS", "custom": "Custom…",
+        "clear": "Clear list", "fps": "TARGET FPS", "custom": "Custom…",
         "enhance": "Enhance videos", "stop": "Stop", "waiting": "Waiting for a video",
         "waiting_detail": "Add one or more videos to begin", "open": "Open output folder",
         "settings": "Settings", "settings_sub": "Application preferences",
@@ -78,7 +78,7 @@ GUI_TEXT = {
     "es": {
         "videos": "TUS VIDEOS", "drop": "Añade o arrastra videos aquí",
         "drop_hint": "haz clic para seleccionar · MP4, MKV, MOV, WebM y más",
-        "clear": "Limpiar lista", "fps": "Selecciona los FPS de destino", "custom": "Personalizado…",
+        "clear": "Limpiar lista", "fps": "FPS DE DESTINO", "custom": "Personalizado…",
         "enhance": "Mejorar videos", "stop": "Detener", "waiting": "Esperando un video",
         "waiting_detail": "Añade uno o más videos para comenzar", "open": "Abrir carpeta de salida",
         "settings": "Configuración", "settings_sub": "Preferencias de la aplicación",
@@ -659,9 +659,11 @@ class DropCard(QFrame):
         self.title = QLabel()
         self.title.setObjectName("dropTitle")
         self.title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.title.setWordWrap(True)
         self.hint = QLabel()
         self.hint.setObjectName("muted")
         self.hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.hint.setWordWrap(True)
         layout.addWidget(self.icon)
         layout.addWidget(self.title)
         layout.addWidget(self.hint)
@@ -1030,16 +1032,22 @@ class MainWindow(QMainWindow):
         middle_layout = QVBoxLayout(middle)
         middle_layout.setContentsMargins(24, 24, 24, 24)
         middle_layout.setSpacing(18)
-        middle_layout.addStretch()
-        fps_icon = QLabel("60")
+        middle_layout.addStretch(1)
+        fps_control = QFrame()
+        fps_control.setObjectName("fpsControl")
+        fps_control_layout = QVBoxLayout(fps_control)
+        fps_control_layout.setContentsMargins(22, 22, 22, 22)
+        fps_control_layout.setSpacing(10)
+        fps_icon = QLabel("60 FPS")
         fps_icon.setObjectName("flowIcon")
         fps_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.fps_value = fps_icon
-        middle_layout.addWidget(self.fps_value)
+        fps_control_layout.addWidget(self.fps_value)
         self.fps_label = QLabel()
-        self.fps_label.setObjectName("statusTitle")
+        self.fps_label.setObjectName("fieldLabel")
         self.fps_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        middle_layout.addWidget(self.fps_label)
+        self.fps_label.setWordWrap(True)
+        fps_control_layout.addWidget(self.fps_label)
         self.fps_combo = ThemedComboBox()
         self.fps_combo.addItem("60 FPS", 60.0)
         self.fps_combo.addItem("120 FPS", 120.0)
@@ -1052,15 +1060,16 @@ class MainWindow(QMainWindow):
         self.fps_combo.currentIndexChanged.connect(self._update_fps_value)
         self.fps_combo.setMinimumHeight(50)
         configure_combo_popup(self.fps_combo)
-        middle_layout.addWidget(self.fps_combo)
+        fps_control_layout.addWidget(self.fps_combo)
         self.custom_fps = QDoubleSpinBox()
         self.custom_fps.setRange(1, 1000)
         self.custom_fps.setDecimals(3)
         self.custom_fps.setValue(max(1, min(1000, saved_number)))
         self.custom_fps.setSuffix(" FPS")
         self.custom_fps.valueChanged.connect(self._update_fps_value)
-        middle_layout.addWidget(self.custom_fps)
+        fps_control_layout.addWidget(self.custom_fps)
         self._update_fps_value()
+        middle_layout.addWidget(fps_control)
         self.start_button = QPushButton()
         self.start_button.setObjectName("primaryButton")
         self.start_button.setMinimumHeight(55)
@@ -1073,7 +1082,7 @@ class MainWindow(QMainWindow):
         self.stop_button.setEnabled(True)
         self.stop_button.clicked.connect(self._stop)
         middle_layout.addWidget(self.stop_button)
-        middle_layout.addStretch()
+        middle_layout.addStretch(1)
         content.addWidget(middle, 1)
 
         right = QFrame()
@@ -1531,7 +1540,7 @@ class MainWindow(QMainWindow):
         value = self.fps_combo.currentData()
         custom = value == "custom"
         self.custom_fps.setVisible(custom)
-        self.fps_value.setText(format_fps(self.custom_fps.value() if custom else value))
+        self.fps_value.setText(f"{format_fps(self.custom_fps.value() if custom else value)} FPS")
 
     def _target_fps(self):
         value = self.fps_combo.currentData()
@@ -1685,7 +1694,8 @@ QFrame#dropCard { background: %(field)s; border: 1px dashed %(border)s; border-r
 QFrame#dropCard:hover, QFrame#dropCard[dragging="true"] { background: %(hover)s; border: 1px solid %(text)s; }
 QLabel#dropIcon { color: %(text)s; font-size: 38px; }
 QLabel#dropTitle { font-size: 17px; font-weight: 700; }
-QLabel#flowIcon { font-size: 42px; font-weight: 500; }
+QFrame#fpsControl { background: %(field)s; border: 1px solid %(border)s; border-radius: 18px; }
+QLabel#flowIcon { font-size: 32px; font-weight: 650; }
 QComboBox, QLineEdit, QDoubleSpinBox { color: %(text)s; background: %(field)s; border: 1px solid %(border)s; border-radius: 11px; padding: 10px 14px; min-height: 20px; selection-background-color: %(selected)s; selection-color: %(selected_text)s; }
 QComboBox:hover, QLineEdit:hover, QDoubleSpinBox:hover { border-color: %(text)s; }
 QComboBox::drop-down { border: none; background: transparent; width: 28px; }
