@@ -1254,10 +1254,7 @@ class MainWindow(QMainWindow):
             return
         path = Path(video)
         self.worker.skip_video(path)
-        self.video_paths = [item for item in self.video_paths if item != path]
-        self.video_metadata.pop(path, None)
         self._take_video_item(self.pending_queue, path)
-        self._take_video_item(self.video_list, path)
         self._set_pending_queue_visible(True)
 
     def _clear(self):
