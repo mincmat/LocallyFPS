@@ -6,8 +6,8 @@ import threading
 from pathlib import Path
 
 from PySide6.QtCore import (
-    QEasingCurve, QObject, QPropertyAnimation, QRectF, QSize, Qt, QThread,
-    QTimer, QUrl, Signal, Slot,
+    QEasingCurve, QObject, QParallelAnimationGroup, QPropertyAnimation, QRect,
+    QRectF, QSize, Qt, QThread, QTimer, QUrl, Signal, Slot,
 )
 from PySide6.QtGui import (
     QColor, QDesktopServices, QFont, QIcon, QImage, QPainter, QPainterPath,
@@ -221,15 +221,40 @@ class InAppModalOverlay(QWidget):
         self._content_layout.addWidget(self._surface, 0, Qt.AlignmentFlag.AlignCenter)
         self._opacity = QGraphicsOpacityEffect(self._surface)
         self._surface.setGraphicsEffect(self._opacity)
-        self._animation = QPropertyAnimation(self._opacity, b"opacity", self)
-        self._animation.setDuration(180)
-        self._animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+        self._fade_animation = QPropertyAnimation(self._opacity, b"opacity", self)
+        self._scale_animation = QPropertyAnimation(self._surface, b"geometry", self)
+        self._animation = QParallelAnimationGroup(self)
+        self._animation.addAnimation(self._fade_animation)
+        self._animation.addAnimation(self._scale_animation)
+        self._animation.finished.connect(self._on_animation_finished)
+        self._closing = False
 
     def set_blur_target(self, widget):
         self._blur_target = widget
 
+    @staticmethod
+    def _scaled_rect(rect, factor):
+        width = round(rect.width() * factor)
+        height = round(rect.height() * factor)
+        return QRect(
+            rect.center().x() - width // 2,
+            rect.center().y() - height // 2,
+            width,
+            height,
+        )
+
+    def _configure_animation(self, start_opacity, end_opacity, start_rect, end_rect, duration):
+        self._animation.stop()
+        for animation in (self._fade_animation, self._scale_animation):
+            animation.setDuration(duration)
+            animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+        self._fade_animation.setStartValue(start_opacity)
+        self._fade_animation.setEndValue(end_opacity)
+        self._scale_animation.setStartValue(start_rect)
+        self._scale_animation.setEndValue(end_rect)
+
     def present(self, widget):
-        self.dismiss()
+        self.dismiss(animated=False)
         self._content = widget
         widget.setParent(self._surface)
         widget.setWindowFlags(Qt.WindowType.Widget)
@@ -237,20 +262,39 @@ class InAppModalOverlay(QWidget):
         self.setGeometry(self.parentWidget().rect())
         if self._blur_target is not None:
             self._blur_effect = QGraphicsBlurEffect(self._blur_target)
-            self._blur_effect.setBlurRadius(5)
+            self._blur_effect.setBlurRadius(16)
             self._blur_effect.setBlurHints(QGraphicsBlurEffect.BlurHint.QualityHint)
             self._blur_target.setGraphicsEffect(self._blur_effect)
         self.show()
         self.raise_()
         widget.show()
+        self._content_layout.activate()
+        end_rect = self._surface.geometry()
+        start_rect = self._scaled_rect(end_rect, 0.97)
+        self._surface.setGeometry(start_rect)
         self._opacity.setOpacity(0)
-        self._animation.stop()
-        self._animation.setStartValue(0)
-        self._animation.setEndValue(1)
+        self._closing = False
+        self._configure_animation(0, 1, start_rect, end_rect, 190)
         self._animation.start()
 
-    def dismiss(self):
+    def dismiss(self, animated=True):
         self._animation.stop()
+        if animated and self.isVisible() and self._content is not None:
+            start_rect = self._surface.geometry()
+            end_rect = self._scaled_rect(start_rect, 0.97)
+            self._closing = True
+            self._configure_animation(self._opacity.opacity(), 0, start_rect, end_rect, 140)
+            self._animation.start()
+            return
+        self._dispose()
+
+    def _on_animation_finished(self):
+        if self._closing:
+            self._dispose()
+
+    def _dispose(self):
+        self._animation.stop()
+        self._closing = False
         if self._blur_target is not None:
             self._blur_target.setGraphicsEffect(None)
             self._blur_effect = None
@@ -1612,6 +1656,7 @@ QWidget { font-family: Inter, "Segoe UI", sans-serif; font-size: 14px; color: %(
 QWidget#root, QStackedWidget#root, QDialog, QMessageBox { background: %(root)s; color: %(text)s; }
 QWidget#inAppOverlay { background: rgba(0, 0, 0, 150); }
 QFrame#modalSurface { background: %(root)s; border: 1px solid %(border)s; border-radius: 24px; }
+QDialog#settingsDialog { background: transparent; border: 0; }
 QLabel { color: %(text)s; background: transparent; }
 QLabel#brand { font-size: 27px; font-weight: 800; }
 QLabel#beta { color: %(text)s; background: %(hover)s; border: 1px solid %(border)s; border-radius: 10px; padding: 4px 9px; font-size: 10px; font-weight: 700; }
