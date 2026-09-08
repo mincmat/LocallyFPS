@@ -955,6 +955,7 @@ class MainWindow(QMainWindow):
 
         right = QFrame()
         right.setObjectName("flowCard")
+        right.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         right_layout = QVBoxLayout(right)
         right_layout.setContentsMargins(22, 18, 22, 22)
         right_layout.setSpacing(10)
@@ -976,7 +977,8 @@ class MainWindow(QMainWindow):
         self.pending_queue = QListWidget()
         self.pending_queue.setObjectName("queue")
         self.pending_queue.setMinimumHeight(104)
-        self.pending_queue.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.pending_queue.setMaximumHeight(260)
+        self.pending_queue.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         self.pending_queue.setVisible(False)
         right_layout.addWidget(self.pending_queue, 1)
         self.pending_empty = QLabel()
@@ -990,7 +992,7 @@ class MainWindow(QMainWindow):
         self.open_button.setVisible(False)
         self.open_button.clicked.connect(self._open_results)
         right_layout.addWidget(self.open_button)
-        content.addWidget(right, 1)
+        content.addWidget(right, 1, Qt.AlignmentFlag.AlignTop)
         outer.addWidget(workspace, 1)
         self.apply_language()
 
