@@ -8,7 +8,7 @@ from pathlib import Path
 from PySide6.QtCore import QObject, QRectF, QSize, Qt, QThread, QTimer, QUrl, Signal, Slot
 from PySide6.QtGui import (
     QColor, QDesktopServices, QFont, QIcon, QImage, QPainter, QPainterPath,
-    QPen, QPixmap,
+    QPalette, QPen, QPixmap,
 )
 from PySide6.QtWidgets import (
     QApplication, QComboBox, QFileDialog, QFrame, QHBoxLayout, QLabel,
@@ -120,6 +120,31 @@ def tr(key):
 def format_fps(value):
     number = float(value)
     return str(int(number)) if number.is_integer() else f"{number:.3f}".rstrip("0").rstrip(".")
+
+
+def configure_combo_popup(combo):
+    """Remove the platform popup gutter that otherwise leaks the system color."""
+    view = combo.view()
+    view.setFrameShape(QFrame.Shape.NoFrame)
+    view.setContentsMargins(0, 0, 0, 0)
+    popup = view.parentWidget()
+    if popup is not None:
+        popup.setObjectName("comboPopup")
+        popup.setContentsMargins(0, 0, 0, 0)
+        field = QColor("#f7f7f7" if config.CONFIG.get("theme") == "light" else "#171717")
+        palette = popup.palette()
+        palette.setColor(QPalette.ColorRole.Window, field)
+        palette.setColor(QPalette.ColorRole.Base, field)
+        popup.setPalette(palette)
+        popup.setAutoFillBackground(True)
+
+
+class ThemedComboBox(QComboBox):
+    """Reapply the popup palette after Qt creates its native menu container."""
+
+    def showPopup(self):
+        super().showPopup()
+        configure_combo_popup(self)
 
 
 class SetupWorker(QObject):
@@ -293,11 +318,12 @@ class SettingsDialog(QDialog):
         labels.addWidget(hint)
         row.addLayout(labels)
         row.addStretch()
-        combo = QComboBox()
+        combo = ThemedComboBox()
         for name, value in values:
             combo.addItem(name, value)
         combo.setCurrentIndex(max(0, combo.findData(selected)))
         combo.setMinimumWidth(230)
+        configure_combo_popup(combo)
         row.addWidget(combo)
         layout.addLayout(row)
         return combo, title, hint
@@ -918,7 +944,7 @@ class MainWindow(QMainWindow):
         self.fps_label.setObjectName("statusTitle")
         self.fps_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         middle_layout.addWidget(self.fps_label)
-        self.fps_combo = QComboBox()
+        self.fps_combo = ThemedComboBox()
         self.fps_combo.addItem("60 FPS", 60.0)
         self.fps_combo.addItem("120 FPS", 120.0)
         self.fps_combo.addItem("240 FPS", 240.0)
@@ -929,6 +955,7 @@ class MainWindow(QMainWindow):
         self.fps_combo.setCurrentIndex(max(0, fps_index))
         self.fps_combo.currentIndexChanged.connect(self._update_fps_value)
         self.fps_combo.setMinimumHeight(50)
+        configure_combo_popup(self.fps_combo)
         middle_layout.addWidget(self.fps_combo)
         self.custom_fps = QDoubleSpinBox()
         self.custom_fps.setRange(1, 1000)
@@ -1033,7 +1060,7 @@ class MainWindow(QMainWindow):
         language_page = QWidget()
         language_layout = QVBoxLayout(language_page)
         language_layout.setContentsMargins(45, 10, 45, 0)
-        self.language_combo = QComboBox()
+        self.language_combo = ThemedComboBox()
         for name, code in LANGUAGES:
             self.language_combo.addItem(name, code)
         language = config.CONFIG.get("language", paths.DEFAULT_LANGUAGE)
@@ -1041,6 +1068,7 @@ class MainWindow(QMainWindow):
         self.language_combo.setCurrentIndex(max(0, current))
         self.language_combo.currentIndexChanged.connect(self._on_onboarding_language_changed)
         self.language_combo.setMinimumHeight(52)
+        configure_combo_popup(self.language_combo)
         language_layout.addWidget(self.language_combo)
         language_layout.addStretch()
         self.setup_content.addWidget(language_page)
@@ -1555,8 +1583,11 @@ QComboBox:hover, QLineEdit:hover, QDoubleSpinBox:hover { border-color: %(text)s;
 QComboBox::drop-down { border: none; background: transparent; width: 28px; }
 QComboBox::down-arrow { image: none; border: none; width: 0; height: 0; }
 QDoubleSpinBox::up-button, QDoubleSpinBox::down-button { width: 0; border: none; background: transparent; }
-QComboBox QAbstractItemView, QAbstractItemView { color: %(text)s; background: %(field)s; alternate-background-color: %(field)s; border: 1px solid %(border)s; outline: 0; selection-background-color: %(selected)s; selection-color: %(selected_text)s; padding: 3px; }
-QComboBox QAbstractItemView::item { border: none; min-height: 32px; padding: 4px 10px; }
+QFrame#comboPopup { background: %(field)s; border: 1px solid %(border)s; border-radius: 8px; padding: 0; }
+QComboBox QAbstractItemView, QAbstractItemView { color: %(text)s; background: %(field)s; alternate-background-color: %(field)s; border: 1px solid %(border)s; border-radius: 8px; outline: 0; selection-background-color: %(selected)s; selection-color: %(selected_text)s; padding: 0; }
+QComboBox QAbstractItemView::viewport { background: %(field)s; border: none; border-radius: 7px; }
+QComboBox QAbstractItemView::item { background: %(field)s; border: none; min-height: 32px; padding: 4px 10px; }
+QComboBox QAbstractItemView::item:selected { background: %(selected)s; color: %(selected_text)s; }
 QPushButton { border: 0; border-radius: 12px; padding: 10px 16px; font-weight: 650; }
 QPushButton#primaryButton { color: %(primary_text)s; background: %(primary)s; font-size: 15px; }
 QPushButton#primaryButton:hover { background: %(selected)s; color: %(selected_text)s; }
@@ -1592,6 +1623,9 @@ def apply_theme(app):
         return
     theme = _effective_theme(app)
     app.setStyleSheet(style_for_theme(theme))
+    for combo in app.allWidgets():
+        if isinstance(combo, QComboBox):
+            configure_combo_popup(combo)
     for widget in app.topLevelWidgets():
         widget.update()
 
