@@ -421,7 +421,7 @@ class MagicCanvas(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setMinimumHeight(160)
-        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self._progress = 0.0
         self._active = False
         self._preview = None
@@ -433,7 +433,7 @@ class MagicCanvas(QWidget):
         self._grain_timer.timeout.connect(self._advance_grain)
 
     def hasHeightForWidth(self):
-        return False
+        return True
 
     def heightForWidth(self, width):
         return max(160, min(360, round(width / self._aspect_ratio)))
@@ -443,6 +443,9 @@ class MagicCanvas(QWidget):
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
+        desired_height = self.heightForWidth(max(1, event.size().width()))
+        if self.minimumHeight() != desired_height:
+            self.setFixedHeight(desired_height)
 
     def set_progress(self, value):
         self._progress = max(0.0, min(1.0, float(value)))
@@ -468,6 +471,7 @@ class MagicCanvas(QWidget):
         self._blurred_preview = self._blur_image(self._preview) if self._preview is not None else None
         if self._preview is not None:
             self._aspect_ratio = self._preview.width() / max(1, self._preview.height())
+            self.setFixedHeight(self.heightForWidth(max(1, self.width())))
         self.updateGeometry()
         self.update()
 
@@ -475,6 +479,7 @@ class MagicCanvas(QWidget):
         self._preview = None
         self._blurred_preview = None
         self._aspect_ratio = 16 / 9
+        self.setFixedHeight(self.heightForWidth(max(1, self.width())))
         self.updateGeometry()
         self.update()
 
@@ -986,7 +991,7 @@ class MainWindow(QMainWindow):
         right_layout.setContentsMargins(22, 18, 22, 22)
         right_layout.setSpacing(10)
         self.magic = MagicCanvas()
-        right_layout.addWidget(self.magic, 1)
+        right_layout.addWidget(self.magic)
         self.status_title = QLabel()
         self.status_title.setObjectName("statusTitle")
         self.status_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
