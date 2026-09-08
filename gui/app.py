@@ -684,7 +684,16 @@ class VideoCard(QFrame):
                 self.thumbnail.size(), Qt.AspectRatioMode.KeepAspectRatioByExpanding,
                 Qt.TransformationMode.SmoothTransformation,
             )
-            self.thumbnail.setPixmap(pixmap)
+            rounded = QPixmap(self.thumbnail.size())
+            rounded.fill(Qt.GlobalColor.transparent)
+            painter = QPainter(rounded)
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+            clip = QPainterPath()
+            clip.addRoundedRect(QRectF(rounded.rect()), 8, 8)
+            painter.setClipPath(clip)
+            painter.drawPixmap(0, 0, pixmap)
+            painter.end()
+            self.thumbnail.setPixmap(rounded)
 
     def set_removable(self, removable):
         self.remove_button.setVisible(removable)
