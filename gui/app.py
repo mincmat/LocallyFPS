@@ -42,7 +42,7 @@ GUI_TEXT = {
         "enhance": "Enhance videos", "stop": "Stop", "waiting": "Waiting for a video",
         "waiting_detail": "Add one or more videos to begin", "open": "Open output folder",
         "settings": "Settings", "settings_sub": "Application preferences",
-        "language": "Language", "language_hint": "Changes are applied immediately",
+        "language": "Language", "language_hint": "Preview the change, then save it",
         "default_fps": "Default FPS", "default_fps_hint": "Used when the application starts",
         "appearance": "Appearance", "output": "Output folder", "choose": "Choose",
         "engine": "Interpolation engine", "engine_hint": "Check FFmpeg, RIFE and the model",
@@ -57,6 +57,8 @@ GUI_TEXT = {
         "light": "Light", "dark": "Dark", "select_videos": "Select videos",
         "queued_one": "1 video ready", "queued_many": "{count} videos ready",
         "queued_detail": "Select the target FPS and start processing", "preparing": "Preparing the interpolation engine",
+        "queue": "NEXT IN QUEUE", "queue_empty": "There are no more videos in the queue",
+        "remove_selected": "Remove selected", "remove_queue": "Remove from queue",
         "complete": "Completed", "complete_one": "1 video processed successfully",
         "complete_many": "{count} videos processed successfully", "warnings": "Completed with warnings",
         "failed": "Could not complete", "unknown_error": "Unknown error", "working_close": "LocallyFPS is working",
@@ -78,7 +80,7 @@ GUI_TEXT = {
         "enhance": "Mejorar videos", "stop": "Detener", "waiting": "Esperando un video",
         "waiting_detail": "Añadí uno o más videos para comenzar", "open": "Abrir carpeta de salida",
         "settings": "Configuración", "settings_sub": "Preferencias de la aplicación",
-        "language": "Idioma", "language_hint": "Los cambios se aplican inmediatamente",
+        "language": "Idioma", "language_hint": "Vista previa del cambio; guardalo para aplicarlo",
         "default_fps": "FPS predeterminados", "default_fps_hint": "Se usan al iniciar la aplicación",
         "appearance": "Apariencia", "output": "Carpeta de salida", "choose": "Elegir",
         "engine": "Motor de interpolación", "engine_hint": "Comprobar FFmpeg, RIFE y el modelo",
@@ -93,6 +95,8 @@ GUI_TEXT = {
         "light": "Claro", "dark": "Oscuro", "select_videos": "Elegir videos",
         "queued_one": "1 video listo", "queued_many": "{count} videos listos",
         "queued_detail": "Elegí los FPS de destino e iniciá el proceso", "preparing": "Preparando el motor de interpolación",
+        "queue": "SIGUEN EN COLA", "queue_empty": "No quedan más videos en la cola",
+        "remove_selected": "Quitar seleccionado", "remove_queue": "Quitar de la cola",
         "complete": "Completado", "complete_one": "1 video procesado correctamente",
         "complete_many": "{count} videos procesados correctamente", "warnings": "Proceso terminado con avisos",
         "failed": "No se pudo completar", "unknown_error": "Error desconocido", "working_close": "LocallyFPS está trabajando",
@@ -175,6 +179,10 @@ class SettingsDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setModal(True)
+        # Settings are previewed live, but must never escape this dialog until
+        # the user explicitly saves them.
+        self._original_language = config.CONFIG.get("language", "en")
+        self._original_theme = config.CONFIG.get("theme", "dark")
         self.setMinimumSize(780, 760)
         self.setObjectName("settingsDialog")
         root = QVBoxLayout(self)
@@ -321,17 +329,26 @@ class SettingsDialog(QDialog):
 
     def _language_changed(self):
         config.CONFIG["language"] = self.language.currentData()
-        config.save_config()
         if self.parent():
             self.parent().apply_language()
         self.apply_language()
 
     def _theme_changed(self):
         config.CONFIG["theme"] = self.theme.currentData()
-        config.save_config()
         apply_theme(QApplication.instance())
         if self.parent():
             self.parent()._update_theme_button()
+
+    def _restore_preview_settings(self):
+        config.CONFIG["language"] = self._original_language
+        config.CONFIG["theme"] = self._original_theme
+        apply_theme(QApplication.instance())
+        if self.parent():
+            self.parent().apply_language()
+
+    def reject(self):
+        self._restore_preview_settings()
+        super().reject()
 
     def _choose_output(self):
         selected = QFileDialog.getExistingDirectory(self, tr("output"), self.output_path.text())
@@ -364,7 +381,7 @@ class SettingsDialog(QDialog):
         self.maintenance_requested.emit(action)
 
     def _repair(self):
-        self.accept()
+        self.reject()
         self.repair_requested.emit()
 
     def _save(self):
@@ -554,10 +571,21 @@ class EnhanceWorker(QObject):
         self.videos = [Path(video) for video in videos]
         self.target_fps = target_fps
         self.cancel_event = threading.Event()
+        self._skip_lock = threading.Lock()
+        self._skipped_videos = set()
 
     @Slot()
     def request_stop(self):
         self.cancel_event.set()
+
+    def skip_video(self, video):
+        """Skip a not-yet-started item without interrupting the current export."""
+        with self._skip_lock:
+            self._skipped_videos.add(Path(video))
+
+    def _is_skipped(self, video):
+        with self._skip_lock:
+            return Path(video) in self._skipped_videos
 
     def _extract_preview(self, video, duration):
         """Return one representative PNG frame without creating a temporary file."""
@@ -634,6 +662,8 @@ class EnhanceWorker(QObject):
                 if self.cancel_event.is_set():
                     self.cancelled.emit(completed)
                     return
+                if self._is_skipped(video):
+                    continue
                 self.preview_ready.emit(None)
                 self.progress.emit(0.1 + 0.9 * index / total, "Leyendo el video…", video.name)
                 info = probe_video_file(video)
@@ -750,10 +780,11 @@ class MainWindow(QMainWindow):
         self.videos_title = QLabel()
         self.videos_title.setObjectName("eyebrow")
         left_layout.addWidget(self.videos_title)
-        self.queue = QListWidget()
-        self.queue.setObjectName("queue")
-        self.queue.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        left_layout.addWidget(self.queue, 1)
+        self.video_list = QListWidget()
+        self.video_list.setObjectName("queue")
+        self.video_list.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.video_list.itemSelectionChanged.connect(self._update_remove_buttons)
+        left_layout.addWidget(self.video_list, 1)
         self.drop = DropCard()
         self.drop.files_dropped.connect(self._choose_or_add)
         left_layout.addWidget(self.drop)
@@ -761,6 +792,11 @@ class MainWindow(QMainWindow):
         self.clear_button.setObjectName("ghostButton")
         self.clear_button.clicked.connect(self._clear)
         left_layout.addWidget(self.clear_button)
+        self.remove_selected_button = QPushButton()
+        self.remove_selected_button.setObjectName("ghostButton")
+        self.remove_selected_button.setEnabled(False)
+        self.remove_selected_button.clicked.connect(self._remove_selected_videos)
+        left_layout.addWidget(self.remove_selected_button)
         content.addWidget(left, 1)
 
         middle = QFrame()
@@ -829,7 +865,29 @@ class MainWindow(QMainWindow):
         self.status_detail.setWordWrap(True)
         right_layout.addWidget(self.status_title)
         right_layout.addWidget(self.status_detail)
-        right_layout.addStretch()
+        self.pending_title = QLabel()
+        self.pending_title.setObjectName("eyebrow")
+        self.pending_title.setVisible(False)
+        right_layout.addWidget(self.pending_title)
+        self.pending_queue = QListWidget()
+        self.pending_queue.setObjectName("queue")
+        self.pending_queue.setMinimumHeight(104)
+        self.pending_queue.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.pending_queue.itemSelectionChanged.connect(self._update_remove_buttons)
+        self.pending_queue.setVisible(False)
+        right_layout.addWidget(self.pending_queue, 1)
+        self.pending_empty = QLabel()
+        self.pending_empty.setObjectName("muted")
+        self.pending_empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.pending_empty.setWordWrap(True)
+        self.pending_empty.setVisible(False)
+        right_layout.addWidget(self.pending_empty)
+        self.remove_queue_button = QPushButton()
+        self.remove_queue_button.setObjectName("ghostButton")
+        self.remove_queue_button.setEnabled(False)
+        self.remove_queue_button.setVisible(False)
+        self.remove_queue_button.clicked.connect(self._remove_from_pending_queue)
+        right_layout.addWidget(self.remove_queue_button)
         self.open_button = QPushButton()
         self.open_button.setObjectName("ghostButton")
         self.open_button.setVisible(False)
@@ -1020,7 +1078,8 @@ class MainWindow(QMainWindow):
                 self.video_paths.append(path)
                 item = QListWidgetItem(f"  ◇  {path.name}")
                 item.setToolTip(str(path))
-                self.queue.addItem(item)
+                item.setData(Qt.ItemDataRole.UserRole, str(path))
+                self.video_list.addItem(item)
                 added += 1
         if added:
             count = len(self.video_paths)
@@ -1028,17 +1087,75 @@ class MainWindow(QMainWindow):
             self.status_title.setText(tr(key).format(count=count))
             self.status_detail.setText(tr("queued_detail"))
             self.start_button.setEnabled(True)
+            self._update_remove_buttons()
+
+    def _update_remove_buttons(self):
+        working = bool(self.thread and self.thread.isRunning())
+        self.remove_selected_button.setEnabled(
+            not working and bool(self.video_list.selectedItems())
+        )
+        self.remove_queue_button.setEnabled(
+            working and bool(self.pending_queue.selectedItems())
+        )
+
+    def _remove_selected_videos(self):
+        if self.thread and self.thread.isRunning():
+            return
+        selected = self.video_list.selectedItems()
+        if not selected:
+            return
+        selected_paths = {Path(item.data(Qt.ItemDataRole.UserRole)) for item in selected}
+        self.video_paths = [path for path in self.video_paths if path not in selected_paths]
+        for item in selected:
+            self.video_list.takeItem(self.video_list.row(item))
+        if self.video_paths:
+            count = len(self.video_paths)
+            key = "queued_one" if count == 1 else "queued_many"
+            self.status_title.setText(tr(key).format(count=count))
+            self.status_detail.setText(tr("queued_detail"))
+        else:
+            self.status_title.setText(tr("waiting"))
+            self.status_detail.setText(tr("waiting_detail"))
+            self.start_button.setEnabled(False)
+        self._update_remove_buttons()
+
+    def _set_pending_queue_visible(self, visible):
+        has_pending = self.pending_queue.count() > 0
+        self.pending_title.setVisible(visible)
+        self.pending_queue.setVisible(visible and has_pending)
+        self.pending_empty.setVisible(visible and not has_pending)
+        self.remove_queue_button.setVisible(visible and has_pending)
+        self._update_remove_buttons()
+
+    def _remove_from_pending_queue(self):
+        selected = self.pending_queue.selectedItems()
+        if not selected or not self.worker:
+            return
+        for item in selected:
+            path = Path(item.data(Qt.ItemDataRole.UserRole))
+            self.worker.skip_video(path)
+            self.video_paths = [video for video in self.video_paths if video != path]
+            self.pending_queue.takeItem(self.pending_queue.row(item))
+            for index in range(self.video_list.count()):
+                listed = self.video_list.item(index)
+                if Path(listed.data(Qt.ItemDataRole.UserRole)) == path:
+                    self.video_list.takeItem(index)
+                    break
+        self._set_pending_queue_visible(True)
 
     def _clear(self):
         if self.thread and self.thread.isRunning():
             return
         self.video_paths.clear()
-        self.queue.clear()
+        self.video_list.clear()
+        self.pending_queue.clear()
+        self._set_pending_queue_visible(False)
         self.magic.set_progress(0)
         self.magic.clear_preview()
         self.status_title.setText(tr("waiting"))
         self.status_detail.setText(tr("waiting_detail"))
         self.open_button.setVisible(False)
+        self._update_remove_buttons()
 
     def _start(self):
         if not self.video_paths or (self.thread and self.thread.isRunning()):
@@ -1057,6 +1174,15 @@ class MainWindow(QMainWindow):
         self.magic.set_active(True)
         self.status_title.setText(tr("working"))
         self.status_detail.setText(tr("preparing"))
+        self.pending_queue.clear()
+        for path in self.video_paths:
+            item = QListWidgetItem(f"  ◇  {path.name}")
+            item.setToolTip(str(path))
+            item.setData(Qt.ItemDataRole.UserRole, str(path))
+            self.pending_queue.addItem(item)
+        self.pending_title.setText(tr("queue"))
+        self.pending_empty.setText(tr("queue_empty"))
+        self._set_pending_queue_visible(True)
 
         self.thread = QThread(self)
         self.worker = EnhanceWorker(self.video_paths, self._target_fps())
@@ -1078,6 +1204,8 @@ class MainWindow(QMainWindow):
         self.magic.set_progress(progress)
         self.status_title.setText(label or tr("working"))
         self.status_detail.setText(filename or tr("preparing"))
+        if filename:
+            self._remove_current_from_pending_queue(filename)
 
     @Slot(str, bool, str)
     def _on_item_finished(self, video, ok, detail):
@@ -1085,10 +1213,18 @@ class MainWindow(QMainWindow):
         for index, queued in enumerate(self.video_paths):
             if queued == target:
                 prefix = "✓" if ok else "!"
-                self.queue.item(index).setText(f"  {prefix}  {queued.name}")
+                self.video_list.item(index).setText(f"  {prefix}  {queued.name}")
                 break
         if ok:
             self.output_paths.append(detail)
+
+    def _remove_current_from_pending_queue(self, filename):
+        for index in range(self.pending_queue.count()):
+            item = self.pending_queue.item(index)
+            if Path(item.data(Qt.ItemDataRole.UserRole)).name == filename:
+                self.pending_queue.takeItem(index)
+                self._set_pending_queue_visible(True)
+                return
 
     @Slot(list, list)
     def _on_finished(self, completed, failed):
@@ -1099,6 +1235,8 @@ class MainWindow(QMainWindow):
         self.clear_button.setEnabled(True)
         self.fps_combo.setEnabled(True)
         self.custom_fps.setEnabled(True)
+        self.pending_queue.clear()
+        self._set_pending_queue_visible(False)
         if completed and not failed:
             self.magic.set_progress(1)
             self.status_title.setText(tr("complete"))
@@ -1137,6 +1275,8 @@ class MainWindow(QMainWindow):
         self.clear_button.setEnabled(True)
         self.fps_combo.setEnabled(True)
         self.custom_fps.setEnabled(True)
+        self.pending_queue.clear()
+        self._set_pending_queue_visible(False)
         self.status_title.setText(tr("stopped"))
         self.status_detail.setText(tr("stopped_detail"))
         if completed:
@@ -1231,6 +1371,10 @@ class MainWindow(QMainWindow):
         self.videos_title.setText(tr("videos"))
         self.drop.apply_language()
         self.clear_button.setText(tr("clear"))
+        self.remove_selected_button.setText(tr("remove_selected"))
+        self.pending_title.setText(tr("queue"))
+        self.pending_empty.setText(tr("queue_empty"))
+        self.remove_queue_button.setText(tr("remove_queue"))
         self.fps_label.setText(tr("fps"))
         self.fps_combo.setItemText(3, tr("custom"))
         self.start_button.setText(tr("enhance"))
