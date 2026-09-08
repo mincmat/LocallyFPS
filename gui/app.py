@@ -336,8 +336,6 @@ class SettingsDialog(QDialog):
     def _theme_changed(self):
         config.CONFIG["theme"] = self.theme.currentData()
         apply_theme(QApplication.instance())
-        if self.parent():
-            self.parent()._update_theme_button()
 
     def _restore_preview_settings(self):
         config.CONFIG["language"] = self._original_language
@@ -756,12 +754,12 @@ class MainWindow(QMainWindow):
         header.addWidget(brand)
         header.addWidget(beta)
         header.addStretch()
-        self.theme_button = QPushButton("☾")
-        self.theme_button.setObjectName("iconButton")
-        self.theme_button.clicked.connect(self._cycle_theme)
-        header.addWidget(self.theme_button)
-        self.settings_button = QPushButton("⚙")
+        self.settings_button = QPushButton()
         self.settings_button.setObjectName("iconButton")
+        settings_icon = paths.RESOURCE_DIR / "packaging" / "settings.svg"
+        if settings_icon.is_file():
+            self.settings_button.setIcon(QIcon(str(settings_icon)))
+            self.settings_button.setIconSize(QSize(24, 24))
         self.settings_button.clicked.connect(self._show_settings)
         header.addWidget(self.settings_button)
         outer.addLayout(header)
@@ -1353,18 +1351,6 @@ class MainWindow(QMainWindow):
             paths.CACHE_DIR.mkdir(parents=True, exist_ok=True)
             QMessageBox.information(self, tr("maintenance_done"), tr("cache_cleared"))
 
-    def _cycle_theme(self):
-        current = config.CONFIG.get("theme", "dark")
-        config.CONFIG["theme"] = "light" if current == "dark" else "dark"
-        config.save_config()
-        apply_theme(QApplication.instance())
-        self._update_theme_button()
-
-    def _update_theme_button(self):
-        mode = config.CONFIG.get("theme", "dark")
-        self.theme_button.setText("☀" if mode == "light" else "☾")
-        self.theme_button.setToolTip(f"{tr('appearance_cycle')}: {tr(mode)}")
-
     def apply_language(self):
         if not hasattr(self, "videos_title"):
             return
@@ -1381,7 +1367,7 @@ class MainWindow(QMainWindow):
         self.stop_button.setText(f"■  {tr('stop')}")
         self.open_button.setText(tr("open"))
         self.settings_button.setToolTip(tr("settings"))
-        self._update_theme_button()
+        self.settings_button.setAccessibleName(tr("settings"))
         self._apply_onboarding_language()
         if not (self.thread and self.thread.isRunning()):
             if self.video_paths:

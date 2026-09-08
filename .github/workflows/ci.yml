@@ -54,6 +54,7 @@ jobs:
             --name LocallyFPS \
             --add-data "languages:languages" \
             --add-data "packaging/locallyfps.svg:packaging" \
+            --add-data "packaging/settings.svg:packaging" \
             --hidden-import platforms.linux \
             --hidden-import platforms.windows \
             --hidden-import platforms.macos \

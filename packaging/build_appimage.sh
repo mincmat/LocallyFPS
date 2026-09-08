@@ -17,6 +17,7 @@ $PYTHON -m PyInstaller --noconfirm --clean --windowed --onedir \
   --name LocallyFPS \
   --add-data "$ROOT/languages:languages" \
   --add-data "$ROOT/packaging/locallyfps.svg:packaging" \
+  --add-data "$ROOT/packaging/settings.svg:packaging" \
   --hidden-import platforms.linux \
   --hidden-import platforms.windows \
   --hidden-import platforms.macos \
