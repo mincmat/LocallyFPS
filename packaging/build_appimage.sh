@@ -8,9 +8,11 @@ ARCH="${ARCH:-x86_64}"
 BUILD_ROOT="$ROOT/build/appimage"
 APPDIR="$BUILD_ROOT/LocallyFPS.AppDir"
 OUTPUT="$ROOT/dist/LocallyFPS-v${VERSION}-${ARCH}.AppImage"
+OUTPUT_TEMP="${OUTPUT}.tmp"
 APPIMAGETOOL="${APPIMAGETOOL:-$ROOT/build/tools/appimagetool-${ARCH}.AppImage}"
 
 rm -rf "$APPDIR" "$ROOT/build/LocallyFPS" "$ROOT/dist/LocallyFPS"
+rm -f "$OUTPUT_TEMP"
 mkdir -p "$APPDIR/usr/bin" "$APPDIR/usr/share/applications" "$APPDIR/usr/share/metainfo" "$APPDIR/usr/share/icons/hicolor/scalable/apps" "$(dirname "$APPIMAGETOOL")" "$ROOT/dist"
 
 $PYTHON -m PyInstaller --noconfirm --clean --windowed --onedir \
@@ -39,6 +41,7 @@ if [[ ! -x "$APPIMAGETOOL" ]]; then
   chmod +x "$APPIMAGETOOL"
 fi
 
-ARCH="$ARCH" "$APPIMAGETOOL" --appimage-extract-and-run "$APPDIR" "$OUTPUT"
-chmod +x "$OUTPUT"
+ARCH="$ARCH" "$APPIMAGETOOL" --appimage-extract-and-run "$APPDIR" "$OUTPUT_TEMP"
+chmod +x "$OUTPUT_TEMP"
+mv -f "$OUTPUT_TEMP" "$OUTPUT"
 echo "$OUTPUT"
