@@ -11,7 +11,7 @@ from PySide6.QtGui import (
     QPalette, QPen, QPixmap,
 )
 from PySide6.QtWidgets import (
-    QApplication, QAbstractScrollArea, QComboBox, QFileDialog, QFrame, QHBoxLayout, QLabel,
+    QApplication, QComboBox, QFileDialog, QFrame, QHBoxLayout, QLabel,
     QListWidget, QListWidgetItem, QMainWindow, QMessageBox, QPushButton,
     QSizePolicy, QStackedWidget, QVBoxLayout, QWidget, QLineEdit,
     QProgressBar, QDialog, QDoubleSpinBox, QGraphicsBlurEffect,
@@ -893,15 +893,13 @@ class MainWindow(QMainWindow):
         self.videos_title = QLabel()
         self.videos_title.setObjectName("eyebrow")
         left_layout.addWidget(self.videos_title)
-        self.video_list = QListWidget()
-        self.video_list.setObjectName("queue")
-        self.video_list.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-        self.video_list.setSizeAdjustPolicy(QAbstractScrollArea.SizeAdjustPolicy.AdjustToContents)
-        self.video_list.setMaximumHeight(260)
-        left_layout.addWidget(self.video_list)
         self.drop = DropCard()
         self.drop.files_dropped.connect(self._choose_or_add)
         left_layout.addWidget(self.drop)
+        self.video_list = QListWidget()
+        self.video_list.setObjectName("queue")
+        self.video_list.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        left_layout.addWidget(self.video_list, 1)
         content.addWidget(left, 1)
 
         middle = QFrame()
