@@ -401,6 +401,10 @@ class MagicCanvas(QWidget):
         self._preview = None
         self._blurred_preview = None
         self._aspect_ratio = 16 / 9
+        self._grain_phase = 0
+        self._grain_timer = QTimer(self)
+        self._grain_timer.setInterval(72)
+        self._grain_timer.timeout.connect(self._advance_grain)
 
     def hasHeightForWidth(self):
         return True
@@ -423,6 +427,16 @@ class MagicCanvas(QWidget):
 
     def set_active(self, active):
         self._active = bool(active)
+        if self._active:
+            self._grain_timer.start()
+        else:
+            self._grain_timer.stop()
+            self._grain_phase = 0
+        self.update()
+
+    def _advance_grain(self):
+        """Move a restrained film-grain layer while interpolation is active."""
+        self._grain_phase = (self._grain_phase + 1) % 4096
         self.update()
 
     @Slot(object)
@@ -450,7 +464,7 @@ class MagicCanvas(QWidget):
         scene = QGraphicsScene()
         item = QGraphicsPixmapItem(pixmap)
         effect = QGraphicsBlurEffect()
-        effect.setBlurRadius(14)
+        effect.setBlurRadius(22)
         effect.setBlurHints(QGraphicsBlurEffect.BlurHint.QualityHint)
         item.setGraphicsEffect(effect)
         scene.addItem(item)
@@ -461,6 +475,26 @@ class MagicCanvas(QWidget):
         scene.render(painter, QRectF(result.rect()), source)
         painter.end()
         return result
+
+    def _draw_animated_grain(self, painter, frame):
+        """Paint lightweight, deterministic moving specks over the preview."""
+        if not self._active:
+            return
+
+        # The phase changes on a low-frequency timer.  Keeping this deterministic
+        # avoids allocating a new image or random generator on every repaint.
+        speck_count = max(42, min(110, (frame.width() * frame.height()) // 4200))
+        width = max(1, frame.width())
+        height = max(1, frame.height())
+        painter.setPen(Qt.PenStyle.NoPen)
+        for index in range(speck_count):
+            seed = (index * 1_103_515_245 + self._grain_phase * 12_345) & 0xFFFFFFFF
+            x = frame.left() + (seed % width)
+            y = frame.top() + ((seed >> 16) % height)
+            alpha = 15 + ((seed >> 25) % 19)
+            size = 0.7 if ((seed >> 22) & 1) else 1.05
+            painter.setBrush(QColor(255, 255, 255, alpha))
+            painter.drawEllipse(QRectF(x - size / 2, y - size / 2, size, size))
 
     def paintEvent(self, _event):
         painter = QPainter(self)
@@ -483,6 +517,8 @@ class MagicCanvas(QWidget):
                 blurred,
             )
             painter.fillRect(frame, QColor(0, 0, 0, 92))
+
+        self._draw_animated_grain(painter, frame)
 
         percent_rect = frame
         shadow = QColor(0, 0, 0, 175)
