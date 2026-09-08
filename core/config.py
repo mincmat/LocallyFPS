@@ -6,7 +6,7 @@ from . import paths
 DEFAULT_CONFIG = {
     "language": "en",
     "onboarding_complete": False,
-    "theme": "system",
+    "theme": "dark",
     "default_target_fps": "60",
     "output_directory": "",
     "encoder": "libx264",
@@ -27,7 +27,7 @@ def _validated_config(data):
         value["language"] = paths.DEFAULT_LANGUAGE
     if not isinstance(value.get("onboarding_complete"), bool):
         value["onboarding_complete"] = False
-    if value.get("theme") not in {"dark", "light", "system"}:
+    if value.get("theme") not in {"dark", "light"}:
         value["theme"] = DEFAULT_CONFIG["theme"]
     try:
         target_fps = float(value.get("default_target_fps"))

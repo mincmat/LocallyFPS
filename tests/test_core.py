@@ -169,17 +169,20 @@ class InputValidationTests(unittest.TestCase):
         self.assertEqual(repaired["video_preset"], "balanced")
         self.assertEqual(repaired["encoder_mode"], "auto")
         self.assertFalse(repaired["onboarding_complete"])
-        self.assertEqual(repaired["theme"], "system")
+        self.assertEqual(repaired["theme"], "dark")
         self.assertEqual(repaired["default_target_fps"], "60")
         self.assertEqual(repaired["output_directory"], "")
 
-    def test_custom_fps_and_all_theme_modes_are_preserved(self):
-        for theme in ("system", "light", "dark"):
+    def test_custom_fps_and_theme_modes_are_preserved(self):
+        for theme in ("light", "dark"):
             repaired = _validated_config({
                 "theme": theme, "default_target_fps": "144",
             })
             self.assertEqual(repaired["theme"], theme)
             self.assertEqual(repaired["default_target_fps"], "144")
+
+    def test_old_system_theme_is_migrated_to_dark(self):
+        self.assertEqual(_validated_config({"theme": "system"})["theme"], "dark")
 
     def test_cancellation_terminates_a_running_child_process(self):
         cancel = threading.Event()

@@ -53,7 +53,7 @@ GUI_TEXT = {
         "retry": "Retry", "start": "Open LocallyFPS", "stopped": "Process stopped",
         "stopped_detail": "Temporary files were removed", "working": "Processing…",
         "stopping": "Stopping…", "stopping_detail": "Closing processes and removing temporary files",
-        "system": "System", "light": "Light", "dark": "Dark", "select_videos": "Select videos",
+        "light": "Light", "dark": "Dark", "select_videos": "Select videos",
         "queued_one": "1 video ready", "queued_many": "{count} videos ready",
         "queued_detail": "Select the target FPS and start processing", "preparing": "Preparing the interpolation engine",
         "complete": "Completed", "complete_one": "1 video processed successfully",
@@ -89,7 +89,7 @@ GUI_TEXT = {
         "retry": "Reintentar", "start": "Abrir LocallyFPS", "stopped": "Proceso detenido",
         "stopped_detail": "Se eliminaron los archivos temporales", "working": "Procesando…",
         "stopping": "Deteniendo…", "stopping_detail": "Cerrando procesos y eliminando archivos temporales",
-        "system": "Sistema", "light": "Claro", "dark": "Oscuro", "select_videos": "Elegir videos",
+        "light": "Claro", "dark": "Oscuro", "select_videos": "Elegir videos",
         "queued_one": "1 video listo", "queued_many": "{count} videos listos",
         "queued_detail": "Elegí los FPS de destino e iniciá el proceso", "preparing": "Preparando el motor de interpolación",
         "complete": "Completado", "complete_one": "1 video procesado correctamente",
@@ -208,9 +208,9 @@ class SettingsDialog(QDialog):
         self.custom_fps.setSuffix(" FPS")
         self.custom_fps.setVisible(selected == "custom")
         form.addWidget(self.custom_fps)
-        theme_values = [(tr("system"), "system"), (tr("light"), "light"), (tr("dark"), "dark")]
+        theme_values = [(tr("dark"), "dark"), (tr("light"), "light")]
         self.theme, self.theme_title, self.theme_hint = self._row_combo(
-            form, theme_values, config.CONFIG.get("theme", "system"),
+            form, theme_values, config.CONFIG.get("theme", "dark"),
         )
         root.addWidget(general)
 
@@ -304,7 +304,7 @@ class SettingsDialog(QDialog):
         self.fps_title.setText(tr("default_fps"))
         self.fps_hint.setText(tr("default_fps_hint"))
         self.theme_title.setText(tr("appearance"))
-        self.theme_hint.setText("Sistema / Claro / Oscuro" if config.CONFIG.get("language") == "es" else "System / Light / Dark")
+        self.theme_hint.setText("Claro / Oscuro" if config.CONFIG.get("language") == "es" else "Light / Dark")
         self.output_title.setText(tr("output"))
         self.choose_button.setText(tr("choose"))
         self.engine_title.setText(tr("engine"))
@@ -314,9 +314,8 @@ class SettingsDialog(QDialog):
         self.cancel_button.setText(tr("cancel"))
         self.save_button.setText(tr("save"))
         self.default_fps.setItemText(3, tr("custom"))
-        self.theme.setItemText(0, tr("system"))
+        self.theme.setItemText(0, tr("dark"))
         self.theme.setItemText(1, tr("light"))
-        self.theme.setItemText(2, tr("dark"))
         self.output_section.setText("RESULTADOS" if config.CONFIG.get("language") == "es" else "RESULTS")
 
     def _language_changed(self):
@@ -666,7 +665,7 @@ class MainWindow(QMainWindow):
         header.addWidget(brand)
         header.addWidget(beta)
         header.addStretch()
-        self.theme_button = QPushButton("◐")
+        self.theme_button = QPushButton("☾")
         self.theme_button.setObjectName("iconButton")
         self.theme_button.clicked.connect(self._cycle_theme)
         header.addWidget(self.theme_button)
@@ -1151,16 +1150,15 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, tr("maintenance_done"), tr("cache_cleared"))
 
     def _cycle_theme(self):
-        modes = ("system", "light", "dark")
-        current = config.CONFIG.get("theme", "system")
-        config.CONFIG["theme"] = modes[(modes.index(current) + 1) % len(modes)] if current in modes else "system"
+        current = config.CONFIG.get("theme", "dark")
+        config.CONFIG["theme"] = "light" if current == "dark" else "dark"
         config.save_config()
         apply_theme(QApplication.instance())
         self._update_theme_button()
 
     def _update_theme_button(self):
-        mode = config.CONFIG.get("theme", "system")
-        self.theme_button.setText({"system": "◐", "light": "☀", "dark": "☾"}.get(mode, "◐"))
+        mode = config.CONFIG.get("theme", "dark")
+        self.theme_button.setText("☀" if mode == "light" else "☾")
         self.theme_button.setToolTip(f"{tr('appearance_cycle')}: {tr(mode)}")
 
     def apply_language(self):
@@ -1198,14 +1196,8 @@ class MainWindow(QMainWindow):
         event.accept()
 
 
-def _effective_theme(app):
-    selected = config.CONFIG.get("theme", "system")
-    if selected != "system":
-        return selected
-    try:
-        return "light" if app.styleHints().colorScheme() == Qt.ColorScheme.Light else "dark"
-    except (AttributeError, TypeError):
-        return "dark"
+def _effective_theme(_app):
+    return "light" if config.CONFIG.get("theme") == "light" else "dark"
 
 
 def style_for_theme(theme):
@@ -1306,10 +1298,6 @@ def main(argv=None):
     paths.ensure_dirs()
     config.load_config()
     apply_theme(app)
-    try:
-        app.styleHints().colorSchemeChanged.connect(lambda *_args: apply_theme(app))
-    except AttributeError:
-        pass
     icon = paths.RESOURCE_DIR / "packaging" / "locallyfps.svg"
     if icon.exists():
         app.setWindowIcon(QIcon(str(icon)))
