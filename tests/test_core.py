@@ -382,6 +382,7 @@ class PathLayoutTests(unittest.TestCase):
             )
             self.assertEqual(paths.DATA_DIR, root / "local" / "LocallyFPS")
             self.assertEqual(paths.VIDEOS_DIR, root / "user" / "Videos" / "LocallyFPS")
+            self.assertEqual(paths.DEFAULT_LANGUAGE, "en")
             self.assertEqual(paths.FFMPEG_BIN.name, "ffmpeg.exe")
 
             paths.setup(

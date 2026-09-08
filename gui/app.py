@@ -5,7 +5,7 @@ import sys
 import threading
 from pathlib import Path
 
-from PySide6.QtCore import QObject, QRectF, QSize, Qt, QThread, QTimer, QUrl, Signal, Slot, QLocale
+from PySide6.QtCore import QObject, QRectF, QSize, Qt, QThread, QTimer, QUrl, Signal, Slot
 from PySide6.QtGui import (
     QColor, QDesktopServices, QFont, QIcon, QImage, QPainter, QPainterPath,
     QPen, QPixmap,
@@ -938,10 +938,6 @@ class MainWindow(QMainWindow):
         for name, code in LANGUAGES:
             self.language_combo.addItem(name, code)
         language = config.CONFIG.get("language", paths.DEFAULT_LANGUAGE)
-        if not paths.CONFIG_PATH.exists() or not config.CONFIG.get("onboarding_complete"):
-            locale_language = QLocale.system().name().split("_")[0]
-            if locale_language in {code for _, code in LANGUAGES}:
-                language = locale_language
         current = self.language_combo.findData(language)
         self.language_combo.setCurrentIndex(max(0, current))
         self.language_combo.currentIndexChanged.connect(self._on_onboarding_language_changed)

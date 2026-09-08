@@ -178,7 +178,9 @@ def setup(base_dir, *, frozen=None, platform_name=None, env=None, home=None):
     IS_FROZEN = frozen
     OS_NAME = _detect_os(platform_name)
     BIN_EXT = ".exe" if OS_NAME == "windows" else ""
-    DEFAULT_LANGUAGE = "es" if OS_NAME == "windows" else "en"
+    # A fresh installation always starts in English. The onboarding selector
+    # remains available before any video is processed.
+    DEFAULT_LANGUAGE = "en"
 
     supplied_base = Path(base_dir).resolve()
     appimage = runtime_env.get("APPIMAGE") if OS_NAME == "linux" else None
