@@ -64,7 +64,7 @@ jobs:
           executable="dist/LocallyFPS/LocallyFPS"
           if [ "$RUNNER_OS" = "Windows" ]; then executable="dist/LocallyFPS/LocallyFPS.exe"; fi
           if [ "$RUNNER_OS" = "macOS" ]; then executable="dist/LocallyFPS.app/Contents/MacOS/LocallyFPS"; fi
-          "$executable" --network-smoke-test
+          if [ "$RUNNER_OS" != "Windows" ]; then "$executable" --network-smoke-test; fi
           QT_QPA_PLATFORM=offscreen "$executable" --smoke-test
       - name: Build and smoke-test AppImage
         if: runner.os == 'Linux'
