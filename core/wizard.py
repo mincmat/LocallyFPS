@@ -127,7 +127,7 @@ def prompt_for_video():
 def _validate_fps(raw, source_fps):
     raw = raw.strip().replace(",", ".")
     if not raw:
-        return recommended_target_fps(source_fps)
+        return 60.0
     try:
         fps = float(raw)
     except ValueError:
@@ -225,9 +225,9 @@ def prompt_for_fps(source_fps, video_name=None):
         sys.stdout.write(video_line)
     sys.stdout.write(" " * hp + Color.accent_bold(header) + "\n")
     sys.stdout.write(" " * cp + Color.dim(cur_fps) + "\n")
-    automatic = f"{_('Press Enter for automatic')}: {format_fps(recommended_target_fps(source_fps))} fps"
-    ap = max(0, (term_w - len(automatic)) // 2)
-    sys.stdout.write(" " * ap + Color.dim(automatic) + "\n")
+    default_hint = f"{_('Press Enter for default')}: 60 fps"
+    ap = max(0, (term_w - len(default_hint)) // 2)
+    sys.stdout.write(" " * ap + Color.dim(default_hint) + "\n")
     sys.stdout.flush()
 
     if sys.platform.startswith("linux") and sys.stdin.isatty():
@@ -379,7 +379,7 @@ def interactive_wizard():
         elif i == 1:
             batch_args = argparse.Namespace(
                 batch=str(paths.VIDEOS_DIR / "original"), input=None,
-                target_fps=60.0, auto_fps=True, skip_existing=True,
+                target_fps=60.0, skip_existing=True,
                 model=None, threads=None, gpu_id=None, uhd=False,
                 output=None, yes=True, config=False,
             )
@@ -419,7 +419,6 @@ def parse_args():
     )
     parser.add_argument("input", nargs="?", type=str, help=_("Input video path"))
     parser.add_argument("--target-fps", type=float, default=60.0, help=_("Target FPS (default: 60)"))
-    parser.add_argument("--auto-fps", action="store_true", help=_("Choose a suitable target FPS automatically"))
     parser.add_argument("--batch", type=str, default=None, metavar="DIRECTORY", help=_("Process every supported video in a directory"))
     parser.add_argument("--skip-existing", action="store_true", help=_("Skip outputs that already exist"))
     parser.add_argument("--model", type=str, default=None, help=_("RIFE model (default: rife-v4.6)"))
@@ -434,17 +433,6 @@ def parse_args():
 
 def _valid_cli_target_fps(value):
     return math.isfinite(value) and 0 < value <= 1000
-
-
-def recommended_target_fps(source_fps):
-    """Choose a familiar smooth rate without creating an unreasonable multiplier."""
-    if not math.isfinite(source_fps) or source_fps <= 0:
-        return 60.0
-    if source_fps < 40:
-        return 60.0
-    if source_fps < 90:
-        return 120.0
-    return min(240.0, source_fps * 2.0)
 
 
 def main_cli(args):
@@ -474,10 +462,6 @@ def main_cli(args):
         status(_("Not a processable video file."), "ERROR")
         sys.exit(1)
     print_video_metadata(info)
-    if args.auto_fps:
-        target_fps = recommended_target_fps(info["fps"])
-        status(f"{_('Automatic target')}: {format_fps(target_fps)} fps", "INFO")
-
     gpu_settings = choose_gpu_settings(
         info.get("display_width", info["width"]),
         info.get("display_height", info["height"]),

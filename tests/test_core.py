@@ -3,8 +3,11 @@ import json
 import math
 import shutil
 import subprocess
+import sys
 import tarfile
 import tempfile
+import threading
+import time
 import unittest
 import zipfile
 from pathlib import Path
@@ -13,6 +16,7 @@ from unittest import mock
 from core import manifest, paths
 from core import _configure_stdio
 from core.config import _validated_config
+from core.cancel import OperationCancelled, run_cancellable
 from core.deps import safe_extract_tar, safe_extract_zip
 from core.disk import estimate_frame_storage, estimate_pipeline_storage
 from core.extract import _get_extraction_filter, _get_pix_fmt_filter, extract_frames
@@ -27,7 +31,7 @@ from core.interpolate import (
     run_interpolation,
 )
 from core.jobs import PipelineJob
-from core.output import unique_output_path
+from core.output import resolve_output_path, unique_output_path
 from core.pipeline import run_pipeline
 from core.progress import ProgressBar
 from core.probe import probe_video_file
@@ -42,7 +46,7 @@ from core.reassemble import (
 )
 from core.update_utils import create_swap_script, parse_version, version_key
 from core.updater import UpdateCheckError, check_for_updates, run_updater
-from core.wizard import _valid_cli_target_fps, recommended_target_fps
+from core.wizard import _valid_cli_target_fps
 
 
 class EncoderTests(unittest.TestCase):
@@ -152,12 +156,6 @@ class InputValidationTests(unittest.TestCase):
         for value in (1, 23.976, 60, 1000):
             self.assertTrue(_valid_cli_target_fps(value))
 
-    def test_automatic_target_uses_familiar_smooth_rates(self):
-        self.assertEqual(recommended_target_fps(23.976), 60)
-        self.assertEqual(recommended_target_fps(30), 60)
-        self.assertEqual(recommended_target_fps(50), 120)
-        self.assertEqual(recommended_target_fps(120), 240)
-
     def test_invalid_config_values_are_repaired(self):
         repaired = _validated_config({
             "language": "bad", "crf": float("nan"), "preset": "turbo",
@@ -172,8 +170,22 @@ class InputValidationTests(unittest.TestCase):
         self.assertEqual(repaired["encoder_mode"], "auto")
         self.assertFalse(repaired["onboarding_complete"])
         self.assertEqual(repaired["theme"], "dark")
-        self.assertEqual(repaired["default_target_fps"], "auto")
+        self.assertEqual(repaired["default_target_fps"], "60")
         self.assertEqual(repaired["output_directory"], "")
+
+    def test_cancellation_terminates_a_running_child_process(self):
+        cancel = threading.Event()
+        timer = threading.Timer(0.2, cancel.set)
+        timer.start()
+        started = time.monotonic()
+        with self.assertRaises(OperationCancelled):
+            run_cancellable(
+                [sys.executable, "-c", "import time; time.sleep(30)"],
+                cancel_event=cancel, stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE, text=True,
+            )
+        timer.cancel()
+        self.assertLess(time.monotonic() - started, 5)
 
 
 class DiskEstimateTests(unittest.TestCase):
@@ -330,6 +342,23 @@ class PathLayoutTests(unittest.TestCase):
             self.assertEqual(paths.CACHE_DIR, root / "xdg-cache" / "LocallyFPS")
             self.assertEqual(paths.CONFIG_DIR, root / "xdg-config" / "LocallyFPS")
             self.assertEqual(paths.VIDEOS_DIR, root / "home" / "Videos" / "LocallyFPS")
+
+    def test_linux_uses_localized_xdg_downloads_for_exports(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp).resolve()
+            home = root / "home"
+            config_dir = root / "config"
+            config_dir.mkdir(parents=True)
+            (config_dir / "user-dirs.dirs").write_text(
+                'XDG_DOWNLOAD_DIR="$HOME/Descargas"\n', encoding="utf-8",
+            )
+            paths.setup(
+                root / "app", frozen=True, platform_name="linux", home=home,
+                env={"XDG_CONFIG_HOME": str(config_dir)},
+            )
+            self.assertEqual(paths.DOWNLOADS_DIR, home / "Descargas")
+            output = resolve_output_path("", Path("clip.mp4"), 60)
+            self.assertEqual(output.parent, home / "Descargas" / "interpoled_locallyfps")
 
     def test_frozen_windows_and_macos_use_native_user_folders(self):
         with tempfile.TemporaryDirectory() as temp:

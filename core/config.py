@@ -7,7 +7,7 @@ DEFAULT_CONFIG = {
     "language": "en",
     "onboarding_complete": False,
     "theme": "dark",
-    "default_target_fps": "auto",
+    "default_target_fps": "60",
     "output_directory": "",
     "encoder": "libx264",
     "crf": 16,
@@ -29,7 +29,7 @@ def _validated_config(data):
         value["onboarding_complete"] = False
     if value.get("theme") not in {"dark", "system"}:
         value["theme"] = DEFAULT_CONFIG["theme"]
-    if value.get("default_target_fps") not in {"auto", "60", "120", "240"}:
+    if value.get("default_target_fps") not in {"60", "120", "240"}:
         value["default_target_fps"] = DEFAULT_CONFIG["default_target_fps"]
     if not isinstance(value.get("output_directory"), str):
         value["output_directory"] = ""

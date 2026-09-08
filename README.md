@@ -27,7 +27,7 @@ LocallyFPS uses the **RIFE** (Real-Time Intermediate Flow Estimation) AI model, 
 - **10 languages** — English, Español, Deutsch, Français, Português, Русский, العربية, 中文, 日本語, 한국어
 - **Interactive TUI** with raw keyboard input on Linux/macOS
 - **CLI mode** for scripting and batch processing
-- **One-command batch mode** with automatic FPS selection and safe per-file continuation
+- **One-command batch mode** with an explicit target FPS and safe per-file continuation
 - **Guided dependency setup** — ffmpeg and RIFE are auto-downloaded on Linux/Windows; macOS uses Homebrew's feature-complete FFmpeg build
 - **Encoder fallback chain** — if your preferred encoder fails, it tries alternatives automatically
 - **Atomic validated exports** — existing outputs survive failures; FPS, frames, duration, audio and decoding are checked
@@ -82,7 +82,7 @@ python fps_enhancer.py input.mp4 --target-fps 60 --output result.mp4
 
 Run `python fps_enhancer.py --help` for all options.
 
-In the interactive FPS screen, press Enter to accept the automatically recommended target.
+In the interactive FPS screen, press Enter to use the 60 FPS default.
 
 ---
 

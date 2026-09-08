@@ -203,7 +203,7 @@ def run_interpolation(
     in_frames_dir, out_frames_dir, model, threads,
     source_frame_count, source_fps, target_fps,
     gpu_id=None, gpu_name=None, uhd=False, rife_cpu=False,
-    progress_cb=None
+    progress_cb=None, cancel_event=None,
 ):
     supports_n = _model_supports_custom_frame_count(model)
     if supports_n:
@@ -284,6 +284,8 @@ def run_interpolation(
     except FileNotFoundError:
         status(_("Interpolation engine not found. Install dependencies first."), "ERROR")
         return 0
+    from .cancel import OperationCancelled, terminate_when_cancelled
+    cancel_finished, cancel_watcher = terminate_when_cancelled(process, cancel_event)
 
     stop_event = threading.Event()
     if progress_cb:
@@ -307,12 +309,17 @@ def run_interpolation(
         output_lines.append(line.rstrip())
 
     process.wait()
+    cancel_finished.set()
+    cancel_watcher.join()
     if process.stdout:
         process.stdout.close()
     stop_event.set()
     watcher.join()
     if not progress_cb:
         pbar.close()
+
+    if cancel_event is not None and cancel_event.is_set():
+        raise OperationCancelled("Operation cancelled by the user")
 
     if process.returncode != 0:
         status(_("Interpolation completed with error."), "ERROR")

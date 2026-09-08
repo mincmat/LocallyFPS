@@ -228,7 +228,7 @@ def _build_encode_command(
     return cmd
 
 
-def _run_ffmpeg(cmd, video_duration, progress_cb=None, label=None):
+def _run_ffmpeg(cmd, video_duration, progress_cb=None, label=None, cancel_event=None):
     sp = Spinner(label or _("Encoding video")) if progress_cb is None else None
     cmd_prog = [cmd[0], "-y", "-progress", "pipe:1"] + cmd[2:]
     try:
@@ -239,6 +239,8 @@ def _run_ffmpeg(cmd, video_duration, progress_cb=None, label=None):
     except FileNotFoundError:
         status(_("ffmpeg not found. Install dependencies first."), "ERROR")
         return 127, "ffmpeg not found", sp
+    from .cancel import OperationCancelled, terminate_when_cancelled
+    cancel_finished, cancel_watcher = terminate_when_cancelled(process, cancel_event)
 
     stderr_buf = []
 
@@ -265,11 +267,15 @@ def _run_ffmpeg(cmd, video_duration, progress_cb=None, label=None):
             elif sp:
                 sp.tick()
     process.wait()
+    cancel_finished.set()
+    cancel_watcher.join()
     stderr_thread.join()
     if process.stdout:
         process.stdout.close()
     if process.stderr:
         process.stderr.close()
+    if cancel_event is not None and cancel_event.is_set():
+        raise OperationCancelled("Operation cancelled by the user")
     return process.returncode, "".join(stderr_buf), sp
 
 
@@ -332,7 +338,7 @@ def reassemble_video(
     out_frames_dir, original_video, target_fps,
     has_audio, output_path, result_frames,
     encoder_name="libx264", crf=18, preset="medium",
-    gpu_settings=None, progress_cb=None, info=None
+    gpu_settings=None, progress_cb=None, info=None, cancel_event=None,
 ):
     from platforms import get_platform
     plat = get_platform()
@@ -370,7 +376,13 @@ def reassemble_video(
             status(tail, "WARN")
             continue
         label = _("Encoding video") if index == 0 else f"{_('Trying encoder')} {name}..."
-        returncode, tail, last_spinner = _run_ffmpeg(cmd, video_duration, progress_cb, label)
+        try:
+            returncode, tail, last_spinner = _run_ffmpeg(
+                cmd, video_duration, progress_cb, label, cancel_event,
+            )
+        except Exception:
+            staging_path.unlink(missing_ok=True)
+            raise
         if returncode == 0 and _validate_output(
             staging_path,
             expected_fps=target_fps,

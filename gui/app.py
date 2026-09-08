@@ -1,6 +1,7 @@
 import argparse
 import math
 import sys
+import threading
 from pathlib import Path
 
 from PySide6.QtCore import QObject, QPointF, Qt, QThread, QTimer, QUrl, Signal, Slot, QLocale
@@ -11,12 +12,13 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import (
     QApplication, QComboBox, QFileDialog, QFrame, QHBoxLayout, QLabel,
     QListWidget, QListWidgetItem, QMainWindow, QMessageBox, QPushButton,
-    QSizePolicy, QStackedWidget, QVBoxLayout, QWidget, QLineEdit,
+    QSizePolicy, QStackedWidget, QVBoxLayout, QWidget,
     QProgressBar, QCheckBox, QDialog,
 )
 
 from core import paths
 from core import config
+from core.cancel import OperationCancelled
 
 
 SUPPORTED_EXTENSIONS = {
@@ -114,10 +116,9 @@ class SettingsDialog(QDialog):
         form.addWidget(label)
         self.language = self._row_combo(form, "Idioma", "El idioma de botones y mensajes", LANGUAGES,
                                         config.CONFIG.get("language", "en"))
-        fps_items = [("Automático · recomendado", "auto"), ("60 FPS", "60"),
-                     ("120 FPS", "120"), ("240 FPS", "240")]
+        fps_items = [("60 FPS", "60"), ("120 FPS", "120"), ("240 FPS", "240")]
         self.default_fps = self._row_combo(form, "FPS predeterminados", "Se aplica al agregar videos", fps_items,
-                                           config.CONFIG.get("default_target_fps", "auto"))
+                                           config.CONFIG.get("default_target_fps", "60"))
         root.addWidget(general)
 
         output = QFrame()
@@ -132,17 +133,14 @@ class SettingsDialog(QDialog):
         path_row = QHBoxLayout()
         path_text = QVBoxLayout()
         path_text.addWidget(QLabel("Carpeta de salida"))
-        path_hint = QLabel("Vacío usa la carpeta de videos de LocallyFPS")
+        path_hint = QLabel(str(paths.DOWNLOADS_DIR / "interpoled_locallyfps"))
         path_hint.setObjectName("muted")
         path_text.addWidget(path_hint)
         path_row.addLayout(path_text)
-        self.output_path = QLineEdit(config.CONFIG.get("output_directory", ""))
-        self.output_path.setPlaceholderText("Automática")
-        path_row.addWidget(self.output_path, 1)
-        choose = QPushButton("Elegir")
-        choose.setObjectName("ghostButton")
-        choose.clicked.connect(self._choose_output)
-        path_row.addWidget(choose)
+        path_row.addStretch()
+        fixed = QLabel("Automática")
+        fixed.setObjectName("successPill")
+        path_row.addWidget(fixed)
         output_layout.addLayout(path_row)
         root.addWidget(output)
 
@@ -194,11 +192,6 @@ class SettingsDialog(QDialog):
         layout.addLayout(row)
         return combo
 
-    def _choose_output(self):
-        selected = QFileDialog.getExistingDirectory(self, "Carpeta de resultados", self.output_path.text() or str(Path.home()))
-        if selected:
-            self.output_path.setText(selected)
-
     def _repair(self):
         self.accept()
         self.repair_requested.emit()
@@ -206,7 +199,6 @@ class SettingsDialog(QDialog):
     def _save(self):
         config.CONFIG["language"] = self.language.currentData()
         config.CONFIG["default_target_fps"] = self.default_fps.currentData()
-        config.CONFIG["output_directory"] = self.output_path.text().strip()
         config.save_config()
         self.accept()
 
@@ -337,16 +329,17 @@ class EnhanceWorker(QObject):
     progress = Signal(float, str, str)
     item_finished = Signal(str, bool, str)
     finished = Signal(list, list)
+    cancelled = Signal(list)
 
     def __init__(self, videos, target_fps):
         super().__init__()
         self.videos = [Path(video) for video in videos]
         self.target_fps = target_fps
-        self._stop_after_current = False
+        self.cancel_event = threading.Event()
 
     @Slot()
     def request_stop(self):
-        self._stop_after_current = True
+        self.cancel_event.set()
 
     @Slot()
     def run(self):
@@ -360,7 +353,6 @@ class EnhanceWorker(QObject):
             from core.output import resolve_output_path, unique_output_path
             from core.pipeline import run_pipeline
             from core.probe import probe_video_file
-            from core.wizard import recommended_target_fps
 
             paths.ensure_dirs()
             load_config()
@@ -374,6 +366,8 @@ class EnhanceWorker(QObject):
                     inner_self.last_error = ""
 
                 def update(inner_self, fraction, label=None, **_kwargs):
+                    if inner_self.worker.cancel_event.is_set():
+                        raise OperationCancelled("Operation cancelled by the user")
                     value = 0.02 + max(0.0, min(1.0, float(fraction))) * 0.06
                     inner_self.worker.progress.emit(
                         value, str(label or "Preparando componentes…"), "Solo la primera vez",
@@ -395,24 +389,25 @@ class EnhanceWorker(QObject):
 
             total = max(len(self.videos), 1)
             for index, video in enumerate(self.videos):
-                if self._stop_after_current:
-                    break
+                if self.cancel_event.is_set():
+                    self.cancelled.emit(completed)
+                    return
                 self.progress.emit(0.1 + 0.9 * index / total, "Leyendo el video…", video.name)
                 info = probe_video_file(video)
                 if info is None:
                     failed.append((str(video), "Formato de video no reconocido"))
                     self.item_finished.emit(str(video), False, "Formato no reconocido")
                     continue
-                target = self.target_fps or recommended_target_fps(info["fps"])
-                output = unique_output_path(resolve_output_path(
-                    config.CONFIG.get("output_directory", ""), video, target,
-                ))
+                target = self.target_fps
+                output = unique_output_path(resolve_output_path("", video, target))
                 gpu = choose_gpu_settings(
                     info.get("display_width", info["width"]),
                     info.get("display_height", info["height"]),
                 )
 
                 def report(fraction, label, *, item=index, name=video.name):
+                    if self.cancel_event.is_set():
+                        return
                     overall = 0.1 + 0.9 * (item + max(0.0, min(1.0, fraction))) / total
                     self.progress.emit(overall, str(label), name)
 
@@ -420,7 +415,11 @@ class EnhanceWorker(QObject):
                     ok = run_pipeline(
                         info, target, output, gpu, interactive=False,
                         progress_cb=report,
+                        cancel_event=self.cancel_event,
                     )
+                except OperationCancelled:
+                    self.cancelled.emit(completed)
+                    return
                 except Exception as exc:
                     ok = False
                     failed.append((str(video), str(exc)))
@@ -431,6 +430,9 @@ class EnhanceWorker(QObject):
                     if not any(name == str(video) for name, _ in failed):
                         failed.append((str(video), "La interpolación no pudo completarse"))
                     self.item_finished.emit(str(video), False, failed[-1][1])
+        except OperationCancelled:
+            self.cancelled.emit(completed)
+            return
         except Exception as exc:
             failed.append(("", str(exc)))
         self.finished.emit(completed, failed)
@@ -522,7 +524,7 @@ class MainWindow(QMainWindow):
         middle_layout.setContentsMargins(24, 24, 24, 24)
         middle_layout.setSpacing(18)
         middle_layout.addStretch()
-        fps_icon = QLabel("AUTO")
+        fps_icon = QLabel("60")
         fps_icon.setObjectName("flowIcon")
         fps_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.fps_value = fps_icon
@@ -532,12 +534,11 @@ class MainWindow(QMainWindow):
         fps_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         middle_layout.addWidget(fps_label)
         self.fps_combo = QComboBox()
-        self.fps_combo.addItem("Automático · recomendado", None)
         self.fps_combo.addItem("60 FPS", 60.0)
         self.fps_combo.addItem("120 FPS", 120.0)
         self.fps_combo.addItem("240 FPS", 240.0)
-        saved_fps = config.CONFIG.get("default_target_fps", "auto")
-        fps_index = 0 if saved_fps == "auto" else self.fps_combo.findData(float(saved_fps))
+        saved_fps = config.CONFIG.get("default_target_fps", "60")
+        fps_index = self.fps_combo.findData(float(saved_fps))
         self.fps_combo.setCurrentIndex(max(0, fps_index))
         self.fps_combo.currentIndexChanged.connect(self._update_fps_value)
         self._update_fps_value()
@@ -548,6 +549,14 @@ class MainWindow(QMainWindow):
         self.start_button.setMinimumHeight(55)
         self.start_button.clicked.connect(self._start)
         middle_layout.addWidget(self.start_button)
+        self.stop_button = QPushButton("■  Detener")
+        self.stop_button.setObjectName("dangerButton")
+        self.stop_button.setMinimumHeight(48)
+        self.stop_button.setVisible(False)
+        self.stop_button.setEnabled(True)
+        self.stop_button.setText("■  Detener")
+        self.stop_button.clicked.connect(self._stop)
+        middle_layout.addWidget(self.stop_button)
         middle_layout.addStretch()
         content.addWidget(middle, 1)
 
@@ -760,6 +769,9 @@ class MainWindow(QMainWindow):
             return
         self.output_paths = []
         self.start_button.setEnabled(False)
+        self.start_button.setVisible(False)
+        self.stop_button.setVisible(True)
+        self.stop_button.setEnabled(True)
         self.clear_button.setEnabled(False)
         self.fps_combo.setEnabled(False)
         self.open_button.setVisible(False)
@@ -776,6 +788,8 @@ class MainWindow(QMainWindow):
         self.worker.item_finished.connect(self._on_item_finished)
         self.worker.finished.connect(self._on_finished)
         self.worker.finished.connect(self.thread.quit)
+        self.worker.cancelled.connect(self._on_cancelled)
+        self.worker.cancelled.connect(self.thread.quit)
         self.thread.finished.connect(self.worker.deleteLater)
         self.thread.finished.connect(self.thread.deleteLater)
         self.thread.start()
@@ -800,7 +814,9 @@ class MainWindow(QMainWindow):
     @Slot(list, list)
     def _on_finished(self, completed, failed):
         self.magic.set_active(False)
+        self.start_button.setVisible(True)
         self.start_button.setEnabled(True)
+        self.stop_button.setVisible(False)
         self.clear_button.setEnabled(True)
         self.fps_combo.setEnabled(True)
         if completed and not failed:
@@ -820,20 +836,46 @@ class MainWindow(QMainWindow):
         self.worker = None
         self.thread = None
 
+    def _stop(self):
+        if not self.worker or not self.thread or not self.thread.isRunning():
+            return
+        self.stop_button.setEnabled(False)
+        self.stop_button.setText("Deteniendo…")
+        self.status_title.setText("Deteniendo el proceso…")
+        self.status_detail.setText("Cerrando el motor y limpiando archivos temporales")
+        self.worker.request_stop()
+
+    @Slot(list)
+    def _on_cancelled(self, completed):
+        self.magic.set_active(False)
+        self.start_button.setVisible(True)
+        self.start_button.setEnabled(True)
+        self.stop_button.setVisible(False)
+        self.stop_button.setEnabled(True)
+        self.stop_button.setText("■  Detener")
+        self.clear_button.setEnabled(True)
+        self.fps_combo.setEnabled(True)
+        self.status_title.setText("Proceso detenido")
+        self.status_detail.setText("Se canceló de forma segura y se limpiaron los archivos temporales")
+        if completed:
+            self.open_button.setVisible(True)
+        self.worker = None
+        self.thread = None
+
     def _open_results(self):
-        directory = Path(self.output_paths[-1]).parent if self.output_paths else paths.VIDEOS_DIR / "enhanced"
+        directory = Path(self.output_paths[-1]).parent if self.output_paths else paths.DOWNLOADS_DIR / "interpoled_locallyfps"
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(directory)))
 
     def _update_fps_value(self, *_args):
         value = self.fps_combo.currentData()
-        self.fps_value.setText("AUTO" if value is None else str(int(value)))
+        self.fps_value.setText(str(int(value)))
 
     def _show_settings(self):
         dialog = SettingsDialog(self)
         dialog.repair_requested.connect(self._show_repair)
         if dialog.exec() == QDialog.DialogCode.Accepted:
-            saved_fps = config.CONFIG.get("default_target_fps", "auto")
-            index = 0 if saved_fps == "auto" else self.fps_combo.findData(float(saved_fps))
+            saved_fps = config.CONFIG.get("default_target_fps", "60")
+            index = self.fps_combo.findData(float(saved_fps))
             self.fps_combo.setCurrentIndex(max(0, index))
 
     def _show_repair(self):
@@ -875,6 +917,7 @@ QLabel#fieldLabel, QLabel#eyebrow { color: #98a3ba; font-size: 11px; font-weight
 QLabel#statusTitle { color: #f8fafc; font-size: 18px; font-weight: 700; }
 QLabel#setupTitle { color: #ffffff; font-size: 26px; font-weight: 750; }
 QLabel#steps { color: #a78bfa; font-size: 13px; font-weight: 700; letter-spacing: 2px; }
+QLabel#successPill { color: #a7f3d0; background: #12352d; border: 1px solid #276255; border-radius: 9px; padding: 7px 11px; }
 QFrame#panel { background: rgba(17,22,40,0.94); border: 1px solid #202943; border-radius: 22px; }
 QFrame#workspace { background: #202431; border: 1px solid #303647; border-radius: 25px; }
 QFrame#flowCard { background: #343947; border: 1px solid #424858; border-radius: 20px; }
@@ -896,10 +939,11 @@ QPushButton#primaryButton:pressed { background: #6342c5; }
 QPushButton#primaryButton:disabled { color: #727b91; background: #252b3c; }
 QPushButton#ghostButton { color: #b9c2d6; background: #151c31; border: 1px solid #293451; }
 QPushButton#ghostButton:hover { color: white; border-color: #6650ae; background: #1b2340; }
+QPushButton#dangerButton { color: #fecaca; background: #3b1821; border: 1px solid #71303e; }
+QPushButton#dangerButton:hover { color: white; background: #57202d; border-color: #a74458; }
+QPushButton#dangerButton:disabled { color: #8f6970; background: #28151a; border-color: #42232b; }
 QPushButton#iconButton { color: #f8fafc; background: transparent; font-size: 27px; padding: 5px; min-width: 42px; }
 QPushButton#iconButton:hover { color: #c4b5fd; background: #171b29; }
-QLineEdit { color: #eef2ff; background: #0d1325; border: 1px solid #2a3555; border-radius: 10px; padding: 10px 12px; }
-QLineEdit:focus { border-color: #8060dc; }
 QProgressBar { background: #090d19; border: 1px solid #28324e; border-radius: 7px; height: 13px; }
 QProgressBar::chunk { background: #8059e8; border-radius: 6px; }
 QListWidget#queue { color: #cbd5e1; background: transparent; border: 0; outline: 0; }

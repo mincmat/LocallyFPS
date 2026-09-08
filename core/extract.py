@@ -127,7 +127,8 @@ def _supports_hdr_tonemapping(ffmpeg_bin):
     return "zscale" in filters and "tonemap" in filters
 
 
-def extract_frames(video_path, frames_dir, info=None, gpu_settings=None, progress_cb=None):
+def extract_frames(video_path, frames_dir, info=None, gpu_settings=None, progress_cb=None, cancel_event=None):
+    from .cancel import OperationCancelled, run_cancellable
     if info:
         w = max(info.get("display_width", info.get("width", 1920)), 1920)
         h = max(info.get("display_height", info.get("height", 1080)), 1080)
@@ -186,12 +187,21 @@ def extract_frames(video_path, frames_dir, info=None, gpu_settings=None, progres
         watcher.start()
 
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        result = run_cancellable(
+            cmd, cancel_event=cancel_event, stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE, text=True,
+        )
     except FileNotFoundError:
         stop_event.set()
         watcher.join()
         status(_("ffmpeg not found. Install dependencies first."), "ERROR")
         return 0
+    except OperationCancelled:
+        stop_event.set()
+        watcher.join()
+        if not progress_cb:
+            pbar.close()
+        raise
 
     # Fallback for FFmpeg version mismatch (vsync vs fps_mode)
     if result.returncode != 0 and "Unrecognized option" in (result.stderr or ""):
@@ -213,7 +223,10 @@ def extract_frames(video_path, frames_dir, info=None, gpu_settings=None, progres
             if pix_fmt_filter:
                 cmd_fallback += ["-vf", pix_fmt_filter]
             cmd_fallback += ["-compression_level", "1", str(frames_dir / "%08d.png")]
-            result = subprocess.run(cmd_fallback, capture_output=True, text=True)
+            result = run_cancellable(
+                cmd_fallback, cancel_event=cancel_event, stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE, text=True,
+            )
 
     stop_event.set()
     watcher.join()

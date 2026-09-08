@@ -24,8 +24,9 @@ PRESETS = {
 
 def run_pipeline(
     info, target_fps, output_path, gpu_settings, model=None, interactive=False,
-    progress_cb=None,
+    progress_cb=None, cancel_event=None,
 ):
+    from .cancel import OperationCancelled
     start_time = time.time()
     user_model = model is not None
     if model is None:
@@ -86,6 +87,12 @@ def run_pipeline(
         root=job.root, persistent=True,
     )
 
+    def check_cancelled():
+        if cancel_event is not None and cancel_event.is_set():
+            tmp.cleanup(force=True)
+            job.cleanup()
+            raise OperationCancelled("Operation cancelled by the user")
+
     if interactive:
         from .progress import PipelineBar
         from .utils import format_fps
@@ -113,7 +120,9 @@ def run_pipeline(
         frame_count = extract_frames(
             info["path"], tmp.in_frames_dir, info, gpu_settings,
             progress_cb=(lambda f: pb(f * 0.30, _("Extracting frames..."))) if pb else None,
+            cancel_event=cancel_event,
         )
+        check_cancelled()
         if frame_count > 0:
             job.update(extracted_frames=frame_count, interpolation_complete=False)
     if frame_count <= 0:
@@ -142,7 +151,9 @@ def run_pipeline(
             uhd=gpu_settings["uhd"],
             rife_cpu=gpu_settings.get("rife_cpu", False),
             progress_cb=(lambda f: pb(0.30 + f * 0.55, _("Interpolating..."))) if pb else None,
+            cancel_event=cancel_event,
         )
+        check_cancelled()
         if actual_fps:
             job.update(
                 interpolation_complete=True, actual_fps=actual_fps,
@@ -167,7 +178,9 @@ def run_pipeline(
         gpu_settings=gpu_settings,
         progress_cb=(lambda f: pb(0.85 + f * 0.15, _("Encoding video..."))) if pb else None,
         info=info,
+        cancel_event=cancel_event,
     )
+    check_cancelled()
 
     if pbar:
         pbar.close()

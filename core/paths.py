@@ -26,6 +26,7 @@ CACHE_DIR = None
 CONFIG_DIR = None
 VIDEOS_DIR = None
 LOGS_DIR = None
+DOWNLOADS_DIR = None
 _FFMPEG_DIR = None
 _RIFE_DIR = None
 CONFIG_PATH = None
@@ -52,6 +53,7 @@ class Paths:
     config_dir: Path
     videos_dir: Path
     logs_dir: Path
+    downloads_dir: Path
     ffmpeg_dir: Path
     rife_dir: Path
     config_path: Path
@@ -83,6 +85,7 @@ def get() -> Paths:
             config_dir=CONFIG_DIR or DATA_DIR / "config",
             videos_dir=VIDEOS_DIR or DATA_DIR / "videos",
             logs_dir=LOGS_DIR or DATA_DIR / "logs",
+            downloads_dir=DOWNLOADS_DIR or Path.home() / "Downloads",
             ffmpeg_dir=_FFMPEG_DIR or DATA_DIR / "deps" / "ffmpeg",
             rife_dir=_RIFE_DIR or DATA_DIR / "deps" / "rife",
             config_path=CONFIG_PATH or DATA_DIR / "config" / "settings.json",
@@ -129,6 +132,27 @@ def _native_layout(os_name, env, home):
     )
 
 
+def _downloads_directory(os_name, env, home):
+    """Return the real per-user Downloads folder, including localized XDG names."""
+    if os_name in {"windows", "macos"}:
+        return home / "Downloads"
+    configured = env.get("XDG_DOWNLOAD_DIR")
+    if not configured:
+        config_home = Path(env.get("XDG_CONFIG_HOME") or home / ".config")
+        user_dirs = config_home / "user-dirs.dirs"
+        try:
+            for line in user_dirs.read_text(encoding="utf-8").splitlines():
+                if line.startswith("XDG_DOWNLOAD_DIR="):
+                    configured = line.split("=", 1)[1].strip().strip('"')
+                    break
+        except OSError:
+            pass
+    if configured:
+        expanded = configured.replace("$HOME", str(home)).replace("${HOME}", str(home))
+        return Path(expanded).expanduser()
+    return home / "Downloads"
+
+
 def _has_legacy_data(directory):
     """Recognize an existing v3 portable folder without changing its data."""
     return any((directory / marker).exists() for marker in (
@@ -144,7 +168,7 @@ def _has_legacy_data(directory):
 def setup(base_dir, *, frozen=None, platform_name=None, env=None, home=None):
     global BASE_DIR, RESOURCE_DIR, INSTALL_DIR, DATA_DIR
     global FFMPEG_BIN, FFPROBE_BIN, RIFE_BIN
-    global MODELS_DIR, CACHE_DIR, CONFIG_DIR, VIDEOS_DIR, LOGS_DIR
+    global MODELS_DIR, CACHE_DIR, CONFIG_DIR, VIDEOS_DIR, LOGS_DIR, DOWNLOADS_DIR
     global _FFMPEG_DIR, _RIFE_DIR, CONFIG_PATH, LANG_DIR
     global OS_NAME, BIN_EXT, DEFAULT_LANGUAGE, LAYOUT_MODE, IS_FROZEN, _INSTANCE
 
@@ -208,6 +232,7 @@ def setup(base_dir, *, frozen=None, platform_name=None, env=None, home=None):
     LOGS_DIR = DATA_DIR / "logs"
     CONFIG_PATH = CONFIG_DIR / "settings.json"
     LANG_DIR = RESOURCE_DIR / "languages"
+    DOWNLOADS_DIR = _downloads_directory(OS_NAME, runtime_env, user_home)
 
 
 def _get_required_dirs():
