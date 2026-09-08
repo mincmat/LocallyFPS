@@ -1,14 +1,13 @@
 import argparse
-import math
 import shutil
+import subprocess
 import sys
 import threading
 from pathlib import Path
 
-from PySide6.QtCore import QObject, QPointF, Qt, QThread, QTimer, QUrl, Signal, Slot, QLocale
+from PySide6.QtCore import QObject, QSize, Qt, QThread, QTimer, QUrl, Signal, Slot, QLocale
 from PySide6.QtGui import (
-    QColor, QDesktopServices, QFont, QIcon, QLinearGradient, QPainter,
-    QPen, QRadialGradient,
+    QColor, QDesktopServices, QFont, QIcon, QImage, QPainter,
 )
 from PySide6.QtWidgets import (
     QApplication, QComboBox, QFileDialog, QFrame, QHBoxLayout, QLabel,
@@ -376,17 +375,14 @@ class SettingsDialog(QDialog):
 
 
 class MagicCanvas(QWidget):
-    """Small, inexpensive animated visualization driven by real progress."""
+    """A blurred preview of the video currently being processed."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setMinimumHeight(245)
-        self._phase = 0.0
         self._progress = 0.0
         self._active = False
-        self._timer = QTimer(self)
-        self._timer.timeout.connect(self._tick)
-        self._timer.start(40)
+        self._preview = None
 
     def set_progress(self, value):
         self._progress = max(0.0, min(1.0, float(value)))
@@ -396,62 +392,48 @@ class MagicCanvas(QWidget):
         self._active = bool(active)
         self.update()
 
-    def _tick(self):
-        self._phase = (self._phase + (0.045 if self._active else 0.012)) % (math.pi * 2)
+    @Slot(object)
+    def set_preview(self, image):
+        self._preview = image if isinstance(image, QImage) and not image.isNull() else None
+        self.update()
+
+    def clear_preview(self):
+        self._preview = None
         self.update()
 
     def paintEvent(self, _event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
         dark = _effective_theme(QApplication.instance()) == "dark"
-        foreground = QColor(246, 246, 246) if dark else QColor(24, 24, 24)
-        surface = QColor(255, 255, 255) if dark else QColor(0, 0, 0)
-        center = QPointF(self.width() / 2, self.height() / 2)
-        radius = min(self.width(), self.height()) * 0.28
+        painter.fillRect(self.rect(), QColor("#1f1f1f") if dark else QColor("#dedede"))
+        if self._preview is not None:
+            # Scale down then back up: it is fast and gives a soft, consistent
+            # blur without an expensive per-frame graphics effect.
+            preview_size = self.size()
+            small_size = QSize(max(1, self.width() // 10), max(1, self.height() // 10))
+            blurred = self._preview.scaled(
+                small_size, Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                Qt.TransformationMode.SmoothTransformation,
+            ).scaled(
+                preview_size, Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+            painter.drawImage(
+                (self.width() - blurred.width()) // 2,
+                (self.height() - blurred.height()) // 2,
+                blurred,
+            )
+            painter.fillRect(self.rect(), QColor(0, 0, 0, 92))
 
-        glow = QRadialGradient(center, radius * 2.1)
-        surface.setAlpha(56 if self._active else 26)
-        glow.setColorAt(0.0, surface)
-        surface.setAlpha(12)
-        glow.setColorAt(0.5, surface)
-        surface.setAlpha(0)
-        glow.setColorAt(1.0, surface)
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(glow)
-        painter.drawEllipse(center, radius * 2.1, radius * 2.1)
-
-        for index in range(18):
-            angle = self._phase * (1.0 + index % 3 * 0.12) + index * math.pi * 2 / 18
-            orbit = radius * (1.35 + 0.22 * math.sin(index * 1.7 + self._phase))
-            x = center.x() + math.cos(angle) * orbit
-            y = center.y() + math.sin(angle) * orbit * 0.58
-            size = 1.7 + (index % 4) * 0.65
-            color = QColor(foreground)
-            color.setAlpha(55 + (index % 5) * 28)
-            painter.setBrush(color)
-            painter.drawEllipse(QPointF(x, y), size, size)
-
-        ring = self.rect().adjusted(
-            int(center.x() - radius), int(center.y() - radius),
-            -int(self.width() - center.x() - radius),
-            -int(self.height() - center.y() - radius),
-        )
-        painter.setBrush(Qt.BrushStyle.NoBrush)
-        track = QColor(foreground)
-        track.setAlpha(28)
-        painter.setPen(QPen(track, 9))
-        painter.drawEllipse(ring)
-        gradient = QLinearGradient(ring.topLeft(), ring.bottomRight())
-        gradient.setColorAt(0, foreground.lighter(125) if dark else foreground.lighter(210))
-        gradient.setColorAt(0.52, foreground)
-        gradient.setColorAt(1, foreground.darker(145) if dark else foreground.lighter(135))
-        painter.setPen(QPen(gradient, 9, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
-        painter.drawArc(ring, 90 * 16, -int(max(self._progress, 0.018) * 360 * 16))
-
-        painter.setPen(foreground)
-        font = QFont("Sans Serif", 27, QFont.Weight.DemiBold)
+        percent_rect = self.rect()
+        shadow = QColor(0, 0, 0, 175)
+        font = QFont("Sans Serif", 31, QFont.Weight.DemiBold)
         painter.setFont(font)
-        painter.drawText(ring, Qt.AlignmentFlag.AlignCenter, f"{round(self._progress * 100)}%")
+        painter.setPen(shadow)
+        painter.drawText(percent_rect.translated(1, 2), Qt.AlignmentFlag.AlignCenter, f"{round(self._progress * 100)}%")
+        painter.setPen(QColor("#ffffff"))
+        painter.drawText(percent_rect, Qt.AlignmentFlag.AlignCenter, f"{round(self._progress * 100)}%")
 
 
 class DropCard(QFrame):
@@ -512,6 +494,7 @@ class DropCard(QFrame):
 
 class EnhanceWorker(QObject):
     progress = Signal(float, str, str)
+    preview_ready = Signal(object)
     item_finished = Signal(str, bool, str)
     finished = Signal(list, list)
     cancelled = Signal(list)
@@ -525,6 +508,30 @@ class EnhanceWorker(QObject):
     @Slot()
     def request_stop(self):
         self.cancel_event.set()
+
+    def _extract_preview(self, video, duration):
+        """Return one representative PNG frame without creating a temporary file."""
+        from core.cancel import run_cancellable
+
+        seek = min(max(float(duration or 0) * 0.1, 0.0), max(float(duration or 0) - 0.05, 0.0))
+        command = [
+            str(paths.FFMPEG_BIN), "-hide_banner", "-loglevel", "error",
+            "-ss", f"{seek:.3f}", "-i", str(video),
+            "-map", "0:v:0", "-frames:v", "1",
+            "-vf", "scale=960:540:force_original_aspect_ratio=decrease",
+            "-f", "image2pipe", "-vcodec", "png", "pipe:1",
+        ]
+        try:
+            result = run_cancellable(
+                command, cancel_event=self.cancel_event, stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+            )
+        except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+            return None
+        if result.returncode != 0 or not result.stdout:
+            return None
+        image = QImage.fromData(result.stdout, "PNG")
+        return image if not image.isNull() else None
 
     @Slot()
     def run(self):
@@ -577,12 +584,16 @@ class EnhanceWorker(QObject):
                 if self.cancel_event.is_set():
                     self.cancelled.emit(completed)
                     return
+                self.preview_ready.emit(None)
                 self.progress.emit(0.1 + 0.9 * index / total, "Leyendo el video…", video.name)
                 info = probe_video_file(video)
                 if info is None:
                     failed.append((str(video), "Formato de video no reconocido"))
                     self.item_finished.emit(str(video), False, "Formato no reconocido")
                     continue
+                preview = self._extract_preview(video, info.get("duration", 0))
+                if preview is not None:
+                    self.preview_ready.emit(preview)
                 target = self.target_fps
                 output = unique_output_path(resolve_output_path(
                     config.CONFIG.get("output_directory", ""), video, target,
@@ -974,6 +985,7 @@ class MainWindow(QMainWindow):
         self.video_paths.clear()
         self.queue.clear()
         self.magic.set_progress(0)
+        self.magic.clear_preview()
         self.status_title.setText(tr("waiting"))
         self.status_detail.setText(tr("waiting_detail"))
         self.open_button.setVisible(False)
@@ -991,6 +1003,7 @@ class MainWindow(QMainWindow):
         self.custom_fps.setEnabled(False)
         self.open_button.setVisible(False)
         self.magic.set_progress(0)
+        self.magic.clear_preview()
         self.magic.set_active(True)
         self.status_title.setText(tr("working"))
         self.status_detail.setText(tr("preparing"))
@@ -1000,6 +1013,7 @@ class MainWindow(QMainWindow):
         self.worker.moveToThread(self.thread)
         self.thread.started.connect(self.worker.run)
         self.worker.progress.connect(self._on_progress)
+        self.worker.preview_ready.connect(self.magic.set_preview)
         self.worker.item_finished.connect(self._on_item_finished)
         self.worker.finished.connect(self._on_finished)
         self.worker.finished.connect(self.thread.quit)
