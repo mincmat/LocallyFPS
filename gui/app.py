@@ -421,7 +421,7 @@ class MagicCanvas(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setMinimumHeight(160)
-        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self._progress = 0.0
         self._active = False
         self._preview = None
@@ -429,11 +429,11 @@ class MagicCanvas(QWidget):
         self._aspect_ratio = 16 / 9
         self._grain_phase = 0
         self._grain_timer = QTimer(self)
-        self._grain_timer.setInterval(72)
+        self._grain_timer.setInterval(125)
         self._grain_timer.timeout.connect(self._advance_grain)
 
     def hasHeightForWidth(self):
-        return True
+        return False
 
     def heightForWidth(self, width):
         return max(160, min(360, round(width / self._aspect_ratio)))
@@ -443,9 +443,6 @@ class MagicCanvas(QWidget):
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        desired_height = self.heightForWidth(max(1, event.size().width()))
-        if self.minimumHeight() != desired_height:
-            self.setFixedHeight(desired_height)
 
     def set_progress(self, value):
         self._progress = max(0.0, min(1.0, float(value)))
@@ -471,7 +468,6 @@ class MagicCanvas(QWidget):
         self._blurred_preview = self._blur_image(self._preview) if self._preview is not None else None
         if self._preview is not None:
             self._aspect_ratio = self._preview.width() / max(1, self._preview.height())
-            self.setFixedHeight(self.heightForWidth(max(1, self.width())))
         self.updateGeometry()
         self.update()
 
@@ -479,7 +475,6 @@ class MagicCanvas(QWidget):
         self._preview = None
         self._blurred_preview = None
         self._aspect_ratio = 16 / 9
-        self.setFixedHeight(self.heightForWidth(max(1, self.width())))
         self.updateGeometry()
         self.update()
 
@@ -509,7 +504,7 @@ class MagicCanvas(QWidget):
 
         # The phase changes on a low-frequency timer.  Keeping this deterministic
         # avoids allocating a new image or random generator on every repaint.
-        speck_count = max(42, min(110, (frame.width() * frame.height()) // 4200))
+        speck_count = max(34, min(90, (frame.width() * frame.height()) // 5200))
         width = max(1, frame.width())
         height = max(1, frame.height())
         painter.setPen(Qt.PenStyle.NoPen)
@@ -518,7 +513,7 @@ class MagicCanvas(QWidget):
             x = frame.left() + (seed % width)
             y = frame.top() + ((seed >> 16) % height)
             alpha = 15 + ((seed >> 25) % 19)
-            size = 0.7 if ((seed >> 22) & 1) else 1.05
+            size = 1.25 if ((seed >> 22) & 1) else 1.75
             painter.setBrush(QColor(255, 255, 255, alpha))
             painter.drawEllipse(QRectF(x - size / 2, y - size / 2, size, size))
 
@@ -932,10 +927,6 @@ class MainWindow(QMainWindow):
         self.drop = DropCard()
         self.drop.files_dropped.connect(self._choose_or_add)
         left_layout.addWidget(self.drop)
-        self.clear_button = QPushButton()
-        self.clear_button.setObjectName("ghostButton")
-        self.clear_button.clicked.connect(self._clear)
-        left_layout.addWidget(self.clear_button)
         content.addWidget(left, 1)
 
         middle = QFrame()
@@ -995,7 +986,7 @@ class MainWindow(QMainWindow):
         right_layout.setContentsMargins(22, 18, 22, 22)
         right_layout.setSpacing(10)
         self.magic = MagicCanvas()
-        right_layout.addWidget(self.magic)
+        right_layout.addWidget(self.magic, 1)
         self.status_title = QLabel()
         self.status_title.setObjectName("statusTitle")
         self.status_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -1317,7 +1308,6 @@ class MainWindow(QMainWindow):
         self.start_button.setVisible(False)
         self.stop_button.setVisible(True)
         self.stop_button.setEnabled(True)
-        self.clear_button.setEnabled(False)
         self.fps_combo.setEnabled(False)
         self.custom_fps.setEnabled(False)
         self.open_button.setVisible(False)
@@ -1383,7 +1373,6 @@ class MainWindow(QMainWindow):
         self.start_button.setVisible(True)
         self.start_button.setEnabled(True)
         self.stop_button.setVisible(False)
-        self.clear_button.setEnabled(True)
         self.fps_combo.setEnabled(True)
         self.custom_fps.setEnabled(True)
         self.pending_queue.clear()
@@ -1424,7 +1413,6 @@ class MainWindow(QMainWindow):
         self.stop_button.setVisible(False)
         self.stop_button.setEnabled(True)
         self.stop_button.setText(f"■  {tr('stop')}")
-        self.clear_button.setEnabled(True)
         self.fps_combo.setEnabled(True)
         self.custom_fps.setEnabled(True)
         self.pending_queue.clear()
@@ -1511,7 +1499,6 @@ class MainWindow(QMainWindow):
             return
         self.videos_title.setText(tr("videos"))
         self.drop.apply_language()
-        self.clear_button.setText(tr("clear"))
         self.pending_title.setText(tr("queue"))
         self.pending_empty.setText(tr("queue_empty"))
         self.fps_label.setText(tr("fps"))
