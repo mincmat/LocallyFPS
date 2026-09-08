@@ -5,7 +5,10 @@ import sys
 import threading
 from pathlib import Path
 
-from PySide6.QtCore import QObject, QRectF, QSize, Qt, QThread, QTimer, QUrl, Signal, Slot
+from PySide6.QtCore import (
+    QEasingCurve, QObject, QPropertyAnimation, QRectF, QSize, Qt, QThread,
+    QTimer, QUrl, Signal, Slot,
+)
 from PySide6.QtGui import (
     QColor, QDesktopServices, QFont, QIcon, QImage, QPainter, QPainterPath,
     QPalette, QPen, QPixmap,
@@ -14,7 +17,7 @@ from PySide6.QtWidgets import (
     QApplication, QComboBox, QFileDialog, QFrame, QHBoxLayout, QLabel,
     QListWidget, QListWidgetItem, QMainWindow, QMessageBox, QPushButton,
     QSizePolicy, QStackedWidget, QVBoxLayout, QWidget, QLineEdit,
-    QProgressBar, QDialog, QDoubleSpinBox, QGraphicsBlurEffect,
+    QProgressBar, QDialog, QDoubleSpinBox, QGraphicsBlurEffect, QGraphicsOpacityEffect,
     QGraphicsPixmapItem, QGraphicsScene,
 )
 
@@ -195,18 +198,84 @@ class SetupWorker(QObject):
             self.finished.emit(False, str(exc))
 
 
+class InAppModalOverlay(QWidget):
+    """A blurred, animated modal layer that stays inside the application window."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("inAppOverlay")
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground)
+        self.setVisible(False)
+        self._content = None
+        self._blur_target = None
+        self._blur_effect = None
+        self._content_layout = QVBoxLayout(self)
+        self._content_layout.setContentsMargins(42, 28, 42, 28)
+        self._content_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._surface = QFrame()
+        self._surface.setObjectName("modalSurface")
+        self._surface.setMaximumWidth(900)
+        self._surface.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
+        self._surface_layout = QVBoxLayout(self._surface)
+        self._surface_layout.setContentsMargins(0, 0, 0, 0)
+        self._content_layout.addWidget(self._surface, 0, Qt.AlignmentFlag.AlignCenter)
+        self._opacity = QGraphicsOpacityEffect(self._surface)
+        self._surface.setGraphicsEffect(self._opacity)
+        self._animation = QPropertyAnimation(self._opacity, b"opacity", self)
+        self._animation.setDuration(180)
+        self._animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+
+    def set_blur_target(self, widget):
+        self._blur_target = widget
+
+    def present(self, widget):
+        self.dismiss()
+        self._content = widget
+        widget.setParent(self._surface)
+        widget.setWindowFlags(Qt.WindowType.Widget)
+        self._surface_layout.addWidget(widget)
+        self.setGeometry(self.parentWidget().rect())
+        if self._blur_target is not None:
+            self._blur_effect = QGraphicsBlurEffect(self._blur_target)
+            self._blur_effect.setBlurRadius(5)
+            self._blur_effect.setBlurHints(QGraphicsBlurEffect.BlurHint.QualityHint)
+            self._blur_target.setGraphicsEffect(self._blur_effect)
+        self.show()
+        self.raise_()
+        widget.show()
+        self._opacity.setOpacity(0)
+        self._animation.stop()
+        self._animation.setStartValue(0)
+        self._animation.setEndValue(1)
+        self._animation.start()
+
+    def dismiss(self):
+        self._animation.stop()
+        if self._blur_target is not None:
+            self._blur_target.setGraphicsEffect(None)
+            self._blur_effect = None
+        if self._content is not None:
+            self._surface_layout.removeWidget(self._content)
+            self._content.hide()
+            self._content.deleteLater()
+            self._content = None
+        self.hide()
+
+
 class SettingsDialog(QDialog):
     repair_requested = Signal()
     maintenance_requested = Signal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setModal(True)
+        self._owner = parent
+        self.setWindowFlags(Qt.WindowType.Widget)
         # Settings are previewed live, but must never escape this dialog until
         # the user explicitly saves them.
         self._original_language = config.CONFIG.get("language", "en")
         self._original_theme = config.CONFIG.get("theme", "dark")
-        self.setMinimumSize(780, 760)
+        self.setMinimumSize(720, 600)
+        self.setMaximumHeight(680)
         self.setObjectName("settingsDialog")
         root = QVBoxLayout(self)
         root.setContentsMargins(34, 28, 34, 28)
@@ -353,8 +422,8 @@ class SettingsDialog(QDialog):
 
     def _language_changed(self):
         config.CONFIG["language"] = self.language.currentData()
-        if self.parent():
-            self.parent().apply_language()
+        if self._owner:
+            self._owner.apply_language()
         self.apply_language()
 
     def _theme_changed(self):
@@ -365,8 +434,8 @@ class SettingsDialog(QDialog):
         config.CONFIG["language"] = self._original_language
         config.CONFIG["theme"] = self._original_theme
         apply_theme(QApplication.instance())
-        if self.parent():
-            self.parent().apply_language()
+        if self._owner:
+            self._owner.apply_language()
 
     def reject(self):
         self._restore_preview_settings()
@@ -842,6 +911,8 @@ class MainWindow(QMainWindow):
         self.setup_worker = None
         self.setup_thread = None
         self._build_ui()
+        self.modal_overlay = InAppModalOverlay(self)
+        self.modal_overlay.set_blur_target(self.main_page)
         if not config.CONFIG.get("onboarding_complete", False) or paths.any_dep_missing():
             self.pages.setCurrentWidget(self.onboarding_page)
         else:
@@ -1414,16 +1485,25 @@ class MainWindow(QMainWindow):
         return float(self.custom_fps.value() if value == "custom" else value)
 
     def _show_settings(self):
+        if self.modal_overlay.isVisible():
+            return
         dialog = SettingsDialog(self)
         dialog.repair_requested.connect(self._show_repair)
         dialog.maintenance_requested.connect(self._maintenance)
-        if dialog.exec() == QDialog.DialogCode.Accepted:
+        dialog.accepted.connect(lambda: self._finish_settings(dialog, True))
+        dialog.rejected.connect(lambda: self._finish_settings(dialog, False))
+        self.modal_overlay.present(dialog)
+
+    def _finish_settings(self, dialog, accepted):
+        if accepted:
             saved_fps = config.CONFIG.get("default_target_fps", "60")
             number = float(saved_fps)
             index = self.fps_combo.findData(number if saved_fps in {"60", "120", "240"} else "custom")
             self.fps_combo.setCurrentIndex(max(0, index))
             self.custom_fps.setValue(max(1, min(1000, number)))
             self._update_fps_value()
+        if self.modal_overlay._content is dialog:
+            self.modal_overlay.dismiss()
 
     def _show_repair(self):
         self.pages.setCurrentWidget(self.onboarding_page)
@@ -1500,6 +1580,11 @@ class MainWindow(QMainWindow):
             return
         event.accept()
 
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if hasattr(self, "modal_overlay") and self.modal_overlay.isVisible():
+            self.modal_overlay.setGeometry(self.rect())
+
 
 def _effective_theme(_app):
     return "light" if config.CONFIG.get("theme") == "light" else "dark"
@@ -1525,6 +1610,8 @@ def style_for_theme(theme):
     return """
 QWidget { font-family: Inter, "Segoe UI", sans-serif; font-size: 14px; color: %(text)s; }
 QWidget#root, QStackedWidget#root, QDialog, QMessageBox { background: %(root)s; color: %(text)s; }
+QWidget#inAppOverlay { background: rgba(0, 0, 0, 150); }
+QFrame#modalSurface { background: %(root)s; border: 1px solid %(border)s; border-radius: 24px; }
 QLabel { color: %(text)s; background: transparent; }
 QLabel#brand { font-size: 27px; font-weight: 800; }
 QLabel#beta { color: %(text)s; background: %(hover)s; border: 1px solid %(border)s; border-radius: 10px; padding: 4px 9px; font-size: 10px; font-weight: 700; }
