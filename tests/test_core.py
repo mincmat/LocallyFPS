@@ -161,7 +161,7 @@ class InputValidationTests(unittest.TestCase):
             "language": "bad", "crf": float("nan"), "preset": "turbo",
             "model": "../../bad", "video_preset": "bad",
             "onboarding_complete": "yes", "theme": "neon",
-            "default_target_fps": "1000", "output_directory": 42,
+            "default_target_fps": "1000.1", "output_directory": 42,
         })
         self.assertEqual(repaired["crf"], 16)
         self.assertEqual(repaired["preset"], "fast")
@@ -169,9 +169,17 @@ class InputValidationTests(unittest.TestCase):
         self.assertEqual(repaired["video_preset"], "balanced")
         self.assertEqual(repaired["encoder_mode"], "auto")
         self.assertFalse(repaired["onboarding_complete"])
-        self.assertEqual(repaired["theme"], "dark")
+        self.assertEqual(repaired["theme"], "system")
         self.assertEqual(repaired["default_target_fps"], "60")
         self.assertEqual(repaired["output_directory"], "")
+
+    def test_custom_fps_and_all_theme_modes_are_preserved(self):
+        for theme in ("system", "light", "dark"):
+            repaired = _validated_config({
+                "theme": theme, "default_target_fps": "144",
+            })
+            self.assertEqual(repaired["theme"], theme)
+            self.assertEqual(repaired["default_target_fps"], "144")
 
     def test_cancellation_terminates_a_running_child_process(self):
         cancel = threading.Event()
@@ -404,6 +412,13 @@ class PathLayoutTests(unittest.TestCase):
 
 
 class OutputPathTests(unittest.TestCase):
+    def test_custom_output_directory_is_used(self):
+        with tempfile.TemporaryDirectory() as temp:
+            destination = Path(temp) / "chosen-folder"
+            output = resolve_output_path(str(destination), Path("clip.mp4"), 144)
+            self.assertEqual(output.parent, destination.resolve())
+            self.assertEqual(output.name, "ENHANCED_144FPS_clip.mp4")
+
     def test_gui_output_never_overwrites_an_existing_export(self):
         with tempfile.TemporaryDirectory() as temp:
             first = Path(temp) / "ENHANCED_60FPS_video.mp4"

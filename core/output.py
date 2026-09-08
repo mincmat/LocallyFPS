@@ -13,10 +13,9 @@ def resolve_output_path(raw, input_path, target_fps):
     default_name = build_default_output_name(input_path, target_fps)
     raw = clean_path_input(raw)
 
-    enhanced_dir = paths.DOWNLOADS_DIR / "interpoled_locallyfps"
-    enhanced_dir.mkdir(parents=True, exist_ok=True)
-
     if not raw:
+        enhanced_dir = paths.DOWNLOADS_DIR / "interpoled_locallyfps"
+        enhanced_dir.mkdir(parents=True, exist_ok=True)
         return enhanced_dir / default_name
     out_path = Path(raw).expanduser().resolve()
     if out_path.is_dir():

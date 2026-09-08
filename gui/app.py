@@ -1,5 +1,6 @@
 import argparse
 import math
+import shutil
 import sys
 import threading
 from pathlib import Path
@@ -12,8 +13,8 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import (
     QApplication, QComboBox, QFileDialog, QFrame, QHBoxLayout, QLabel,
     QListWidget, QListWidgetItem, QMainWindow, QMessageBox, QPushButton,
-    QSizePolicy, QStackedWidget, QVBoxLayout, QWidget,
-    QProgressBar, QCheckBox, QDialog,
+    QSizePolicy, QStackedWidget, QVBoxLayout, QWidget, QLineEdit,
+    QProgressBar, QDialog, QDoubleSpinBox,
 )
 
 from core import paths
@@ -31,6 +32,91 @@ LANGUAGES = [
     ("Français", "fr"), ("Deutsch", "de"), ("中文", "zh"),
     ("日本語", "ja"), ("한국어", "ko"), ("Русский", "ru"), ("العربية", "ar"),
 ]
+
+GUI_TEXT = {
+    "en": {
+        "videos": "YOUR VIDEOS", "drop": "Add or drop videos here",
+        "drop_hint": "click to select · MP4, MKV, MOV, WebM and more",
+        "clear": "Clear list", "fps": "Set the target FPS", "custom": "Custom…",
+        "enhance": "Enhance videos", "stop": "Stop", "waiting": "Waiting for a video",
+        "waiting_detail": "Add one or more videos to begin", "open": "Open output folder",
+        "settings": "Settings", "settings_sub": "Application preferences",
+        "language": "Language", "language_hint": "Changes are applied immediately",
+        "default_fps": "Default FPS", "default_fps_hint": "Used when the application starts",
+        "appearance": "Appearance", "output": "Output folder", "choose": "Choose",
+        "engine": "Interpolation engine", "engine_hint": "Check FFmpeg, RIFE and the model",
+        "check": "Check", "reset": "Reset and maintenance", "cancel": "Cancel",
+        "save": "Save changes", "continue": "Continue", "prepare": "Prepare LocallyFPS",
+        "setup_title": "Initial setup", "setup_language": "Choose the application language.",
+        "setup_engine": "Required components", "setup_engine_hint": "FFmpeg, RIFE and the model will be checked before continuing.",
+        "ready": "Setup complete", "ready_hint": "Required components are installed.",
+        "retry": "Retry", "start": "Open LocallyFPS", "stopped": "Process stopped",
+        "stopped_detail": "Temporary files were removed", "working": "Processing…",
+        "stopping": "Stopping…", "stopping_detail": "Closing processes and removing temporary files",
+        "system": "System", "light": "Light", "dark": "Dark", "select_videos": "Select videos",
+        "queued_one": "1 video ready", "queued_many": "{count} videos ready",
+        "queued_detail": "Select the target FPS and start processing", "preparing": "Preparing the interpolation engine",
+        "complete": "Completed", "complete_one": "1 video processed successfully",
+        "complete_many": "{count} videos processed successfully", "warnings": "Completed with warnings",
+        "failed": "Could not complete", "unknown_error": "Unknown error", "working_close": "LocallyFPS is working",
+        "working_close_detail": "Stop the current process before closing the application.",
+        "maintenance_safe": "Exported videos will not be deleted.", "reset_settings": "Reset settings",
+        "reinstall_dependencies": "Reinstall dependencies", "clear_cache": "Clear temporary cache",
+        "maintenance_confirm": "Do you want to continue?", "maintenance_done": "Maintenance completed",
+        "dependencies_removed": "Dependencies were removed. They will be installed again now.",
+        "settings_reset": "Settings were reset.", "cache_cleared": "Temporary cache was cleared.",
+        "checking": "Checking components", "checking_hint": "Missing or damaged components will be installed again.",
+        "check_now": "Check now", "setup_check_ready": "Ready to check required components",
+        "setup_preparing": "Preparing…", "components_verified": "Components verified",
+        "setup_failed": "Setup could not be completed", "appearance_cycle": "Change appearance",
+    },
+    "es": {
+        "videos": "TUS VIDEOS", "drop": "Añadí o soltá videos acá",
+        "drop_hint": "hacé clic para elegir · MP4, MKV, MOV, WebM y más",
+        "clear": "Limpiar lista", "fps": "Elegí los FPS de destino", "custom": "Personalizado…",
+        "enhance": "Mejorar videos", "stop": "Detener", "waiting": "Esperando un video",
+        "waiting_detail": "Añadí uno o más videos para comenzar", "open": "Abrir carpeta de salida",
+        "settings": "Configuración", "settings_sub": "Preferencias de la aplicación",
+        "language": "Idioma", "language_hint": "Los cambios se aplican inmediatamente",
+        "default_fps": "FPS predeterminados", "default_fps_hint": "Se usan al iniciar la aplicación",
+        "appearance": "Apariencia", "output": "Carpeta de salida", "choose": "Elegir",
+        "engine": "Motor de interpolación", "engine_hint": "Comprobar FFmpeg, RIFE y el modelo",
+        "check": "Comprobar", "reset": "Restablecer y mantenimiento", "cancel": "Cancelar",
+        "save": "Guardar cambios", "continue": "Continuar", "prepare": "Preparar LocallyFPS",
+        "setup_title": "Configuración inicial", "setup_language": "Elegí el idioma de la aplicación.",
+        "setup_engine": "Componentes necesarios", "setup_engine_hint": "Se comprobarán FFmpeg, RIFE y el modelo antes de continuar.",
+        "ready": "Configuración completada", "ready_hint": "Los componentes necesarios están instalados.",
+        "retry": "Reintentar", "start": "Abrir LocallyFPS", "stopped": "Proceso detenido",
+        "stopped_detail": "Se eliminaron los archivos temporales", "working": "Procesando…",
+        "stopping": "Deteniendo…", "stopping_detail": "Cerrando procesos y eliminando archivos temporales",
+        "system": "Sistema", "light": "Claro", "dark": "Oscuro", "select_videos": "Elegir videos",
+        "queued_one": "1 video listo", "queued_many": "{count} videos listos",
+        "queued_detail": "Elegí los FPS de destino e iniciá el proceso", "preparing": "Preparando el motor de interpolación",
+        "complete": "Completado", "complete_one": "1 video procesado correctamente",
+        "complete_many": "{count} videos procesados correctamente", "warnings": "Proceso terminado con avisos",
+        "failed": "No se pudo completar", "unknown_error": "Error desconocido", "working_close": "LocallyFPS está trabajando",
+        "working_close_detail": "Detené el proceso actual antes de cerrar la aplicación.",
+        "maintenance_safe": "Los videos exportados no se eliminarán.", "reset_settings": "Restablecer configuración",
+        "reinstall_dependencies": "Reinstalar dependencias", "clear_cache": "Borrar caché temporal",
+        "maintenance_confirm": "¿Querés continuar?", "maintenance_done": "Mantenimiento completado",
+        "dependencies_removed": "Se eliminaron las dependencias. Ahora se instalarán nuevamente.",
+        "settings_reset": "Se restableció la configuración.", "cache_cleared": "Se borró la caché temporal.",
+        "checking": "Comprobando componentes", "checking_hint": "Se instalarán nuevamente los componentes faltantes o dañados.",
+        "check_now": "Comprobar ahora", "setup_check_ready": "Listo para comprobar los componentes necesarios",
+        "setup_preparing": "Preparando…", "components_verified": "Componentes verificados",
+        "setup_failed": "No se pudo completar la preparación", "appearance_cycle": "Cambiar apariencia",
+    },
+}
+
+
+def tr(key):
+    language = config.CONFIG.get("language", "en")
+    return GUI_TEXT.get(language, GUI_TEXT["en"]).get(key, key)
+
+
+def format_fps(value):
+    number = float(value)
+    return str(int(number)) if number.is_integer() else f"{number:.3f}".rstrip("0").rstrip(".")
 
 
 class SetupWorker(QObject):
@@ -83,65 +169,70 @@ class SetupWorker(QObject):
 
 class SettingsDialog(QDialog):
     repair_requested = Signal()
+    maintenance_requested = Signal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Configuración · LocallyFPS")
         self.setModal(True)
-        self.setMinimumSize(740, 650)
+        self.setMinimumSize(780, 760)
         self.setObjectName("settingsDialog")
         root = QVBoxLayout(self)
-        root.setContentsMargins(34, 30, 34, 30)
-        root.setSpacing(18)
-        heading = QHBoxLayout()
-        title_box = QVBoxLayout()
-        title = QLabel("Configuración")
-        title.setObjectName("headline")
-        subtitle = QLabel("Tu experiencia, sin complicaciones.")
-        subtitle.setObjectName("subtitle")
-        title_box.addWidget(title)
-        title_box.addWidget(subtitle)
-        heading.addLayout(title_box)
-        heading.addStretch()
-        root.addLayout(heading)
+        root.setContentsMargins(34, 28, 34, 28)
+        root.setSpacing(14)
+        self.title = QLabel()
+        self.title.setObjectName("headline")
+        self.subtitle = QLabel()
+        self.subtitle.setObjectName("subtitle")
+        root.addWidget(self.title)
+        root.addWidget(self.subtitle)
 
         general = QFrame()
         general.setObjectName("settingsSection")
-        general.setMinimumHeight(175)
         form = QVBoxLayout(general)
-        form.setContentsMargins(24, 20, 24, 20)
-        form.setSpacing(13)
-        label = QLabel("GENERAL")
-        label.setObjectName("eyebrow")
-        form.addWidget(label)
-        self.language = self._row_combo(form, "Idioma", "El idioma de botones y mensajes", LANGUAGES,
-                                        config.CONFIG.get("language", "en"))
-        fps_items = [("60 FPS", "60"), ("120 FPS", "120"), ("240 FPS", "240")]
-        self.default_fps = self._row_combo(form, "FPS predeterminados", "Se aplica al agregar videos", fps_items,
-                                           config.CONFIG.get("default_target_fps", "60"))
+        form.setContentsMargins(24, 18, 24, 18)
+        form.setSpacing(10)
+        self.general_section = QLabel("GENERAL")
+        self.general_section.setObjectName("eyebrow")
+        form.addWidget(self.general_section)
+        self.language, self.language_title, self.language_hint = self._row_combo(
+            form, LANGUAGES, config.CONFIG.get("language", "en"),
+        )
+        saved = config.CONFIG.get("default_target_fps", "60")
+        selected = saved if saved in {"60", "120", "240"} else "custom"
+        fps_values = [("60 FPS", "60"), ("120 FPS", "120"), ("240 FPS", "240"), (tr("custom"), "custom")]
+        self.default_fps, self.fps_title, self.fps_hint = self._row_combo(form, fps_values, selected)
+        self.custom_fps = QDoubleSpinBox()
+        self.custom_fps.setRange(1, 1000)
+        self.custom_fps.setDecimals(3)
+        self.custom_fps.setValue(max(1, min(1000, float(saved))))
+        self.custom_fps.setSuffix(" FPS")
+        self.custom_fps.setVisible(selected == "custom")
+        form.addWidget(self.custom_fps)
+        theme_values = [(tr("system"), "system"), (tr("light"), "light"), (tr("dark"), "dark")]
+        self.theme, self.theme_title, self.theme_hint = self._row_combo(
+            form, theme_values, config.CONFIG.get("theme", "system"),
+        )
         root.addWidget(general)
 
         output = QFrame()
         output.setObjectName("settingsSection")
-        output.setMinimumHeight(112)
         output_layout = QVBoxLayout(output)
-        output_layout.setContentsMargins(24, 20, 24, 20)
-        output_layout.setSpacing(12)
-        output_label = QLabel("RESULTADOS")
-        output_label.setObjectName("eyebrow")
-        output_layout.addWidget(output_label)
-        path_row = QHBoxLayout()
-        path_text = QVBoxLayout()
-        path_text.addWidget(QLabel("Carpeta de salida"))
-        path_hint = QLabel(str(paths.DOWNLOADS_DIR / "interpoled_locallyfps"))
-        path_hint.setObjectName("muted")
-        path_text.addWidget(path_hint)
-        path_row.addLayout(path_text)
-        path_row.addStretch()
-        fixed = QLabel("Automática")
-        fixed.setObjectName("successPill")
-        path_row.addWidget(fixed)
-        output_layout.addLayout(path_row)
+        output_layout.setContentsMargins(24, 18, 24, 18)
+        self.output_section = QLabel("RESULTS")
+        self.output_section.setObjectName("eyebrow")
+        output_layout.addWidget(self.output_section)
+        output_row = QHBoxLayout()
+        self.output_title = QLabel()
+        output_row.addWidget(self.output_title)
+        self.output_path = QLineEdit(
+            config.CONFIG.get("output_directory") or str(paths.DOWNLOADS_DIR / "interpoled_locallyfps")
+        )
+        output_row.addWidget(self.output_path, 1)
+        self.choose_button = QPushButton()
+        self.choose_button.setObjectName("ghostButton")
+        self.choose_button.clicked.connect(self._choose_output)
+        output_row.addWidget(self.choose_button)
+        output_layout.addLayout(output_row)
         root.addWidget(output)
 
         engine = QFrame()
@@ -149,39 +240,51 @@ class SettingsDialog(QDialog):
         engine_layout = QHBoxLayout(engine)
         engine_layout.setContentsMargins(24, 18, 24, 18)
         engine_text = QVBoxLayout()
-        engine_title = QLabel("Motor de interpolación")
-        engine_hint = QLabel("Comprobá o repará FFmpeg, RIFE y el modelo")
-        engine_hint.setObjectName("muted")
-        engine_text.addWidget(engine_title)
-        engine_text.addWidget(engine_hint)
+        self.engine_title = QLabel()
+        self.engine_hint = QLabel()
+        self.engine_hint.setObjectName("muted")
+        engine_text.addWidget(self.engine_title)
+        engine_text.addWidget(self.engine_hint)
         engine_layout.addLayout(engine_text)
         engine_layout.addStretch()
-        repair = QPushButton("Comprobar")
-        repair.setObjectName("ghostButton")
-        repair.clicked.connect(self._repair)
-        engine_layout.addWidget(repair)
+        self.repair = QPushButton()
+        self.repair.setObjectName("ghostButton")
+        self.repair.clicked.connect(self._repair)
+        engine_layout.addWidget(self.repair)
         root.addWidget(engine)
+        self.maintenance = QPushButton()
+        self.maintenance.setObjectName("ghostButton")
+        self.maintenance.clicked.connect(self._show_maintenance)
+        root.addWidget(self.maintenance)
         root.addStretch()
         actions = QHBoxLayout()
         actions.addStretch()
-        cancel = QPushButton("Cancelar")
-        cancel.setObjectName("ghostButton")
-        cancel.clicked.connect(self.reject)
-        save = QPushButton("Guardar cambios")
-        save.setObjectName("primaryButton")
-        save.clicked.connect(self._save)
-        actions.addWidget(cancel)
-        actions.addWidget(save)
+        self.cancel_button = QPushButton()
+        self.cancel_button.setObjectName("ghostButton")
+        self.cancel_button.clicked.connect(self.reject)
+        self.save_button = QPushButton()
+        self.save_button.setObjectName("primaryButton")
+        self.save_button.clicked.connect(self._save)
+        actions.addWidget(self.cancel_button)
+        actions.addWidget(self.save_button)
         root.addLayout(actions)
 
-    def _row_combo(self, layout, title, hint, values, selected):
+        self.language.currentIndexChanged.connect(self._language_changed)
+        self.default_fps.currentIndexChanged.connect(
+            lambda: self.custom_fps.setVisible(self.default_fps.currentData() == "custom")
+        )
+        self.theme.currentIndexChanged.connect(self._theme_changed)
+        self.apply_language()
+
+    def _row_combo(self, layout, values, selected):
         row = QHBoxLayout()
-        text = QVBoxLayout()
-        text.addWidget(QLabel(title))
-        muted = QLabel(hint)
-        muted.setObjectName("muted")
-        text.addWidget(muted)
-        row.addLayout(text)
+        labels = QVBoxLayout()
+        title = QLabel()
+        hint = QLabel()
+        hint.setObjectName("muted")
+        labels.addWidget(title)
+        labels.addWidget(hint)
+        row.addLayout(labels)
         row.addStretch()
         combo = QComboBox()
         for name, value in values:
@@ -190,15 +293,85 @@ class SettingsDialog(QDialog):
         combo.setMinimumWidth(230)
         row.addWidget(combo)
         layout.addLayout(row)
-        return combo
+        return combo, title, hint
+
+    def apply_language(self):
+        self.setWindowTitle(f"{tr('settings')} · LocallyFPS")
+        self.title.setText(tr("settings"))
+        self.subtitle.setText(tr("settings_sub"))
+        self.language_title.setText(tr("language"))
+        self.language_hint.setText(tr("language_hint"))
+        self.fps_title.setText(tr("default_fps"))
+        self.fps_hint.setText(tr("default_fps_hint"))
+        self.theme_title.setText(tr("appearance"))
+        self.theme_hint.setText("Sistema / Claro / Oscuro" if config.CONFIG.get("language") == "es" else "System / Light / Dark")
+        self.output_title.setText(tr("output"))
+        self.choose_button.setText(tr("choose"))
+        self.engine_title.setText(tr("engine"))
+        self.engine_hint.setText(tr("engine_hint"))
+        self.repair.setText(tr("check"))
+        self.maintenance.setText(tr("reset"))
+        self.cancel_button.setText(tr("cancel"))
+        self.save_button.setText(tr("save"))
+        self.default_fps.setItemText(3, tr("custom"))
+        self.theme.setItemText(0, tr("system"))
+        self.theme.setItemText(1, tr("light"))
+        self.theme.setItemText(2, tr("dark"))
+        self.output_section.setText("RESULTADOS" if config.CONFIG.get("language") == "es" else "RESULTS")
+
+    def _language_changed(self):
+        config.CONFIG["language"] = self.language.currentData()
+        config.save_config()
+        if self.parent():
+            self.parent().apply_language()
+        self.apply_language()
+
+    def _theme_changed(self):
+        config.CONFIG["theme"] = self.theme.currentData()
+        config.save_config()
+        apply_theme(QApplication.instance())
+        if self.parent():
+            self.parent()._update_theme_button()
+
+    def _choose_output(self):
+        selected = QFileDialog.getExistingDirectory(self, tr("output"), self.output_path.text())
+        if selected:
+            self.output_path.setText(selected)
+
+    def _show_maintenance(self):
+        dialog = QDialog(self)
+        dialog.setWindowTitle(tr("reset"))
+        layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(24, 24, 24, 24)
+        hint = QLabel(tr("maintenance_safe"))
+        hint.setObjectName("muted")
+        layout.addWidget(hint)
+        actions = [
+            (tr("reset_settings"), "settings"),
+            (tr("reinstall_dependencies"), "dependencies"),
+            (tr("clear_cache"), "cache"),
+        ]
+        for label, action in actions:
+            button = QPushButton(label)
+            button.setObjectName("ghostButton")
+            button.clicked.connect(lambda _checked=False, value=action: self._maintenance_choice(dialog, value))
+            layout.addWidget(button)
+        dialog.exec()
+
+    def _maintenance_choice(self, dialog, action):
+        dialog.accept()
+        self.reject()
+        self.maintenance_requested.emit(action)
 
     def _repair(self):
         self.accept()
         self.repair_requested.emit()
 
     def _save(self):
-        config.CONFIG["language"] = self.language.currentData()
-        config.CONFIG["default_target_fps"] = self.default_fps.currentData()
+        value = self.custom_fps.value() if self.default_fps.currentData() == "custom" else int(self.default_fps.currentData())
+        config.CONFIG["default_target_fps"] = format_fps(value)
+        config.CONFIG["theme"] = self.theme.currentData()
+        config.CONFIG["output_directory"] = self.output_path.text().strip()
         config.save_config()
         self.accept()
 
@@ -231,13 +404,19 @@ class MagicCanvas(QWidget):
     def paintEvent(self, _event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        dark = _effective_theme(QApplication.instance()) == "dark"
+        foreground = QColor(246, 246, 246) if dark else QColor(24, 24, 24)
+        surface = QColor(255, 255, 255) if dark else QColor(0, 0, 0)
         center = QPointF(self.width() / 2, self.height() / 2)
         radius = min(self.width(), self.height()) * 0.28
 
         glow = QRadialGradient(center, radius * 2.1)
-        glow.setColorAt(0.0, QColor(130, 88, 255, 90 if self._active else 52))
-        glow.setColorAt(0.45, QColor(49, 208, 255, 32))
-        glow.setColorAt(1.0, QColor(8, 10, 25, 0))
+        surface.setAlpha(56 if self._active else 26)
+        glow.setColorAt(0.0, surface)
+        surface.setAlpha(12)
+        glow.setColorAt(0.5, surface)
+        surface.setAlpha(0)
+        glow.setColorAt(1.0, surface)
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(glow)
         painter.drawEllipse(center, radius * 2.1, radius * 2.1)
@@ -248,8 +427,8 @@ class MagicCanvas(QWidget):
             x = center.x() + math.cos(angle) * orbit
             y = center.y() + math.sin(angle) * orbit * 0.58
             size = 1.7 + (index % 4) * 0.65
-            color = QColor(112, 221, 255) if index % 2 else QColor(192, 123, 255)
-            color.setAlpha(80 + (index % 5) * 30)
+            color = QColor(foreground)
+            color.setAlpha(55 + (index % 5) * 28)
             painter.setBrush(color)
             painter.drawEllipse(QPointF(x, y), size, size)
 
@@ -259,16 +438,18 @@ class MagicCanvas(QWidget):
             -int(self.height() - center.y() - radius),
         )
         painter.setBrush(Qt.BrushStyle.NoBrush)
-        painter.setPen(QPen(QColor(255, 255, 255, 25), 9))
+        track = QColor(foreground)
+        track.setAlpha(28)
+        painter.setPen(QPen(track, 9))
         painter.drawEllipse(ring)
         gradient = QLinearGradient(ring.topLeft(), ring.bottomRight())
-        gradient.setColorAt(0, QColor("#8b5cf6"))
-        gradient.setColorAt(0.52, QColor("#38bdf8"))
-        gradient.setColorAt(1, QColor("#34d399"))
+        gradient.setColorAt(0, foreground.lighter(125) if dark else foreground.lighter(210))
+        gradient.setColorAt(0.52, foreground)
+        gradient.setColorAt(1, foreground.darker(145) if dark else foreground.lighter(135))
         painter.setPen(QPen(gradient, 9, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
         painter.drawArc(ring, 90 * 16, -int(max(self._progress, 0.018) * 360 * 16))
 
-        painter.setPen(QColor("#f8fafc"))
+        painter.setPen(foreground)
         font = QFont("Sans Serif", 27, QFont.Weight.DemiBold)
         painter.setFont(font)
         painter.drawText(ring, Qt.AlignmentFlag.AlignCenter, f"{round(self._progress * 100)}%")
@@ -285,18 +466,23 @@ class DropCard(QFrame):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(30, 28, 30, 28)
         layout.setSpacing(7)
-        icon = QLabel("✦")
-        icon.setObjectName("dropIcon")
-        icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        title = QLabel("Soltá tus videos acá")
-        title.setObjectName("dropTitle")
-        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        hint = QLabel("o hacé clic para elegirlos · MP4, MKV, MOV, WebM y más")
-        hint.setObjectName("muted")
-        hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(icon)
-        layout.addWidget(title)
-        layout.addWidget(hint)
+        self.icon = QLabel("+")
+        self.icon.setObjectName("dropIcon")
+        self.icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.title = QLabel()
+        self.title.setObjectName("dropTitle")
+        self.title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.hint = QLabel()
+        self.hint.setObjectName("muted")
+        self.hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self.icon)
+        layout.addWidget(self.title)
+        layout.addWidget(self.hint)
+        self.apply_language()
+
+    def apply_language(self):
+        self.title.setText(tr("drop"))
+        self.hint.setText(tr("drop_hint"))
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
@@ -399,7 +585,9 @@ class EnhanceWorker(QObject):
                     self.item_finished.emit(str(video), False, "Formato no reconocido")
                     continue
                 target = self.target_fps
-                output = unique_output_path(resolve_output_path("", video, target))
+                output = unique_output_path(resolve_output_path(
+                    config.CONFIG.get("output_directory", ""), video, target,
+                ))
                 gpu = choose_gpu_settings(
                     info.get("display_width", info["width"]),
                     info.get("display_height", info["height"]),
@@ -471,24 +659,21 @@ class MainWindow(QMainWindow):
         outer.setSpacing(24)
 
         header = QHBoxLayout()
-        brand = QLabel("Locally<span style='color:#a78bfa'>FPS</span>")
+        brand = QLabel("LocallyFPS")
         brand.setObjectName("brand")
-        brand.setTextFormat(Qt.TextFormat.RichText)
         beta = QLabel("4.0  BETA")
         beta.setObjectName("beta")
         header.addWidget(brand)
         header.addWidget(beta)
         header.addStretch()
-        self.theme_button = QPushButton("☾")
+        self.theme_button = QPushButton("◐")
         self.theme_button.setObjectName("iconButton")
-        self.theme_button.setToolTip("Apariencia")
-        self.theme_button.clicked.connect(self._theme_notice)
+        self.theme_button.clicked.connect(self._cycle_theme)
         header.addWidget(self.theme_button)
-        settings_button = QPushButton("⚙")
-        settings_button.setObjectName("iconButton")
-        settings_button.setToolTip("Configuración")
-        settings_button.clicked.connect(self._show_settings)
-        header.addWidget(settings_button)
+        self.settings_button = QPushButton("⚙")
+        self.settings_button.setObjectName("iconButton")
+        self.settings_button.clicked.connect(self._show_settings)
+        header.addWidget(self.settings_button)
         outer.addLayout(header)
 
         workspace = QFrame()
@@ -502,9 +687,9 @@ class MainWindow(QMainWindow):
         left_layout = QVBoxLayout(left)
         left_layout.setContentsMargins(22, 22, 22, 22)
         left_layout.setSpacing(14)
-        videos_title = QLabel("TUS VIDEOS")
-        videos_title.setObjectName("eyebrow")
-        left_layout.addWidget(videos_title)
+        self.videos_title = QLabel()
+        self.videos_title.setObjectName("eyebrow")
+        left_layout.addWidget(self.videos_title)
         self.queue = QListWidget()
         self.queue.setObjectName("queue")
         self.queue.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
@@ -512,7 +697,7 @@ class MainWindow(QMainWindow):
         self.drop = DropCard()
         self.drop.files_dropped.connect(self._choose_or_add)
         left_layout.addWidget(self.drop)
-        self.clear_button = QPushButton("Limpiar lista")
+        self.clear_button = QPushButton()
         self.clear_button.setObjectName("ghostButton")
         self.clear_button.clicked.connect(self._clear)
         left_layout.addWidget(self.clear_button)
@@ -529,32 +714,40 @@ class MainWindow(QMainWindow):
         fps_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.fps_value = fps_icon
         middle_layout.addWidget(self.fps_value)
-        fps_label = QLabel("Elegí los FPS de destino")
-        fps_label.setObjectName("statusTitle")
-        fps_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        middle_layout.addWidget(fps_label)
+        self.fps_label = QLabel()
+        self.fps_label.setObjectName("statusTitle")
+        self.fps_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        middle_layout.addWidget(self.fps_label)
         self.fps_combo = QComboBox()
         self.fps_combo.addItem("60 FPS", 60.0)
         self.fps_combo.addItem("120 FPS", 120.0)
         self.fps_combo.addItem("240 FPS", 240.0)
+        self.fps_combo.addItem(tr("custom"), "custom")
         saved_fps = config.CONFIG.get("default_target_fps", "60")
-        fps_index = self.fps_combo.findData(float(saved_fps))
+        saved_number = float(saved_fps)
+        fps_index = self.fps_combo.findData(saved_number if saved_fps in {"60", "120", "240"} else "custom")
         self.fps_combo.setCurrentIndex(max(0, fps_index))
         self.fps_combo.currentIndexChanged.connect(self._update_fps_value)
-        self._update_fps_value()
         self.fps_combo.setMinimumHeight(50)
         middle_layout.addWidget(self.fps_combo)
-        self.start_button = QPushButton("✦  Mejorar videos")
+        self.custom_fps = QDoubleSpinBox()
+        self.custom_fps.setRange(1, 1000)
+        self.custom_fps.setDecimals(3)
+        self.custom_fps.setValue(max(1, min(1000, saved_number)))
+        self.custom_fps.setSuffix(" FPS")
+        self.custom_fps.valueChanged.connect(self._update_fps_value)
+        middle_layout.addWidget(self.custom_fps)
+        self._update_fps_value()
+        self.start_button = QPushButton()
         self.start_button.setObjectName("primaryButton")
         self.start_button.setMinimumHeight(55)
         self.start_button.clicked.connect(self._start)
         middle_layout.addWidget(self.start_button)
-        self.stop_button = QPushButton("■  Detener")
+        self.stop_button = QPushButton()
         self.stop_button.setObjectName("dangerButton")
         self.stop_button.setMinimumHeight(48)
         self.stop_button.setVisible(False)
         self.stop_button.setEnabled(True)
-        self.stop_button.setText("■  Detener")
         self.stop_button.clicked.connect(self._stop)
         middle_layout.addWidget(self.stop_button)
         middle_layout.addStretch()
@@ -567,23 +760,24 @@ class MainWindow(QMainWindow):
         right_layout.setSpacing(10)
         self.magic = MagicCanvas()
         right_layout.addWidget(self.magic)
-        self.status_title = QLabel("Esperando un video")
+        self.status_title = QLabel()
         self.status_title.setObjectName("statusTitle")
         self.status_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.status_detail = QLabel("Arrastrá algo increíble para empezar")
+        self.status_detail = QLabel()
         self.status_detail.setObjectName("muted")
         self.status_detail.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.status_detail.setWordWrap(True)
         right_layout.addWidget(self.status_title)
         right_layout.addWidget(self.status_detail)
         right_layout.addStretch()
-        self.open_button = QPushButton("Abrir carpeta de resultados")
+        self.open_button = QPushButton()
         self.open_button.setObjectName("ghostButton")
         self.open_button.setVisible(False)
         self.open_button.clicked.connect(self._open_results)
         right_layout.addWidget(self.open_button)
         content.addWidget(right, 1)
         outer.addWidget(workspace, 1)
+        self.apply_language()
 
     def _build_onboarding(self):
         page = QWidget()
@@ -591,9 +785,8 @@ class MainWindow(QMainWindow):
         outer = QVBoxLayout(page)
         outer.setContentsMargins(64, 42, 64, 48)
         header = QHBoxLayout()
-        brand = QLabel("Locally<span style='color:#a78bfa'>FPS</span>")
+        brand = QLabel("LocallyFPS")
         brand.setObjectName("brand")
-        brand.setTextFormat(Qt.TextFormat.RichText)
         badge = QLabel("4.0  BETA")
         badge.setObjectName("beta")
         header.addWidget(brand)
@@ -612,11 +805,11 @@ class MainWindow(QMainWindow):
         self.setup_steps.setObjectName("steps")
         self.setup_steps.setAlignment(Qt.AlignmentFlag.AlignCenter)
         card_layout.addWidget(self.setup_steps)
-        self.setup_title = QLabel("Hagamos que LocallyFPS se sienta tuyo")
+        self.setup_title = QLabel()
         self.setup_title.setObjectName("setupTitle")
         self.setup_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         card_layout.addWidget(self.setup_title)
-        self.setup_subtitle = QLabel("Elegí el idioma de la aplicación. Podés cambiarlo cuando quieras desde Configuración.")
+        self.setup_subtitle = QLabel()
         self.setup_subtitle.setObjectName("subtitle")
         self.setup_subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.setup_subtitle.setWordWrap(True)
@@ -635,6 +828,7 @@ class MainWindow(QMainWindow):
                 language = locale_language
         current = self.language_combo.findData(language)
         self.language_combo.setCurrentIndex(max(0, current))
+        self.language_combo.currentIndexChanged.connect(self._on_onboarding_language_changed)
         self.language_combo.setMinimumHeight(52)
         language_layout.addWidget(self.language_combo)
         language_layout.addStretch()
@@ -644,7 +838,7 @@ class MainWindow(QMainWindow):
         dependency_layout = QVBoxLayout(dependency_page)
         dependency_layout.setContentsMargins(20, 8, 20, 0)
         dependency_layout.setSpacing(12)
-        self.setup_component = QLabel("Listo para comprobar tu equipo")
+        self.setup_component = QLabel()
         self.setup_component.setObjectName("statusTitle")
         self.setup_component.setAlignment(Qt.AlignmentFlag.AlignCenter)
         dependency_layout.addWidget(self.setup_component)
@@ -661,7 +855,7 @@ class MainWindow(QMainWindow):
         dependency_layout.addStretch()
         self.setup_content.addWidget(dependency_page)
         card_layout.addWidget(self.setup_content, 1)
-        self.setup_button = QPushButton("Continuar  →")
+        self.setup_button = QPushButton()
         self.setup_button.setObjectName("primaryButton")
         self.setup_button.setMinimumHeight(54)
         self.setup_button.clicked.connect(self._advance_setup)
@@ -672,7 +866,29 @@ class MainWindow(QMainWindow):
         centered.addStretch()
         outer.addLayout(centered, 4)
         outer.addStretch()
+        self._apply_onboarding_language()
         return page
+
+    def _on_onboarding_language_changed(self):
+        config.CONFIG["language"] = self.language_combo.currentData()
+        config.save_config()
+        self.apply_language()
+
+    def _apply_onboarding_language(self):
+        if self.setup_content.currentIndex() == 0:
+            self.setup_title.setText(tr("setup_title"))
+            self.setup_subtitle.setText(tr("setup_language"))
+            self.setup_button.setText(f"{tr('continue')}  →")
+            self.setup_component.setText(tr("setup_check_ready"))
+        elif self.setup_progress.value() == 100:
+            self.setup_title.setText(tr("ready"))
+            self.setup_subtitle.setText(tr("ready_hint"))
+            self.setup_component.setText(f"✓  {tr('components_verified')}")
+            self.setup_button.setText(tr("start"))
+        else:
+            self.setup_title.setText(tr("setup_engine"))
+            self.setup_subtitle.setText(tr("setup_engine_hint"))
+            self.setup_button.setText(tr("prepare"))
 
     def _advance_setup(self):
         if self.setup_content.currentIndex() == 0:
@@ -680,9 +896,7 @@ class MainWindow(QMainWindow):
             config.save_config()
             self.setup_content.setCurrentIndex(1)
             self.setup_steps.setText("1  ●────────●  2")
-            self.setup_title.setText("Preparando la magia")
-            self.setup_subtitle.setText("Descargaremos y verificaremos los componentes necesarios. Esto ocurre una sola vez.")
-            self.setup_button.setText("Preparar LocallyFPS")
+            self._apply_onboarding_language()
             return
         if self.setup_thread and self.setup_thread.isRunning():
             return
@@ -693,7 +907,7 @@ class MainWindow(QMainWindow):
 
     def _run_setup(self):
         self.setup_button.setEnabled(False)
-        self.setup_button.setText("Preparando…")
+        self.setup_button.setText(tr("setup_preparing"))
         self.setup_progress.setValue(1)
         self.setup_thread = QThread(self)
         self.setup_worker = SetupWorker()
@@ -719,16 +933,16 @@ class MainWindow(QMainWindow):
             config.CONFIG["onboarding_complete"] = True
             config.save_config()
             self.setup_progress.setValue(100)
-            self.setup_title.setText("Todo listo para crear fluidez")
-            self.setup_subtitle.setText("Tu equipo está preparado. LocallyFPS elegirá automáticamente la opción más segura para cada video.")
-            self.setup_component.setText("✓  Componentes verificados")
-            self.setup_detail.setText("No necesitás configurar nada más")
-            self.setup_button.setText("Empezar  ✦")
+            self.setup_title.setText(tr("ready"))
+            self.setup_subtitle.setText(tr("ready_hint"))
+            self.setup_component.setText(f"✓  {tr('components_verified')}")
+            self.setup_detail.setText("FFmpeg · RIFE")
+            self.setup_button.setText(tr("start"))
         else:
-            self.setup_title.setText("Necesitamos un intento más")
-            self.setup_component.setText("No se pudo completar la preparación")
+            self.setup_title.setText(tr("setup_failed"))
+            self.setup_component.setText(tr("setup_failed"))
             self.setup_detail.setText(error)
-            self.setup_button.setText("Reintentar")
+            self.setup_button.setText(tr("retry"))
         self.setup_worker = None
         self.setup_thread = None
 
@@ -736,7 +950,7 @@ class MainWindow(QMainWindow):
     def _choose_or_add(self, paths_from_drop):
         if not paths_from_drop:
             paths_from_drop, _ = QFileDialog.getOpenFileNames(
-                self, "Elegí tus videos", str(Path.home() / "Videos"),
+                self, tr("select_videos"), str(Path.home() / "Videos"),
                 "Videos (*.mp4 *.m4v *.mkv *.avi *.mov *.webm *.flv *.wmv *.mpg *.mpeg *.ts *.mts *.m2ts *.ogv *.3gp *.vob)",
             )
         added = 0
@@ -750,8 +964,9 @@ class MainWindow(QMainWindow):
                 added += 1
         if added:
             count = len(self.video_paths)
-            self.status_title.setText(f"{count} video{'s' if count != 1 else ''} listo{'s' if count != 1 else ''}")
-            self.status_detail.setText("Todo preparado para mejorar el movimiento")
+            key = "queued_one" if count == 1 else "queued_many"
+            self.status_title.setText(tr(key).format(count=count))
+            self.status_detail.setText(tr("queued_detail"))
             self.start_button.setEnabled(True)
 
     def _clear(self):
@@ -760,8 +975,8 @@ class MainWindow(QMainWindow):
         self.video_paths.clear()
         self.queue.clear()
         self.magic.set_progress(0)
-        self.status_title.setText("Esperando un video")
-        self.status_detail.setText("Arrastrá algo increíble para empezar")
+        self.status_title.setText(tr("waiting"))
+        self.status_detail.setText(tr("waiting_detail"))
         self.open_button.setVisible(False)
 
     def _start(self):
@@ -774,14 +989,15 @@ class MainWindow(QMainWindow):
         self.stop_button.setEnabled(True)
         self.clear_button.setEnabled(False)
         self.fps_combo.setEnabled(False)
+        self.custom_fps.setEnabled(False)
         self.open_button.setVisible(False)
         self.magic.set_progress(0)
         self.magic.set_active(True)
-        self.status_title.setText("Despertando la magia…")
-        self.status_detail.setText("Preparando el motor de interpolación")
+        self.status_title.setText(tr("working"))
+        self.status_detail.setText(tr("preparing"))
 
         self.thread = QThread(self)
-        self.worker = EnhanceWorker(self.video_paths, self.fps_combo.currentData())
+        self.worker = EnhanceWorker(self.video_paths, self._target_fps())
         self.worker.moveToThread(self.thread)
         self.thread.started.connect(self.worker.run)
         self.worker.progress.connect(self._on_progress)
@@ -797,8 +1013,8 @@ class MainWindow(QMainWindow):
     @Slot(float, str, str)
     def _on_progress(self, progress, label, filename):
         self.magic.set_progress(progress)
-        self.status_title.setText(label or "Trabajando…")
-        self.status_detail.setText(filename or "LocallyFPS está preparando todo")
+        self.status_title.setText(label or tr("working"))
+        self.status_detail.setText(filename or tr("preparing"))
 
     @Slot(str, bool, str)
     def _on_item_finished(self, video, ok, detail):
@@ -819,18 +1035,20 @@ class MainWindow(QMainWindow):
         self.stop_button.setVisible(False)
         self.clear_button.setEnabled(True)
         self.fps_combo.setEnabled(True)
+        self.custom_fps.setEnabled(True)
         if completed and not failed:
             self.magic.set_progress(1)
-            self.status_title.setText("La magia está lista ✦")
-            self.status_detail.setText(f"{len(completed)} video{'s' if len(completed) != 1 else ''} mejorado{'s' if len(completed) != 1 else ''} correctamente")
+            self.status_title.setText(tr("complete"))
+            key = "complete_one" if len(completed) == 1 else "complete_many"
+            self.status_detail.setText(tr(key).format(count=len(completed)))
             self.open_button.setVisible(True)
         elif completed:
-            self.status_title.setText("Proceso terminado con avisos")
+            self.status_title.setText(tr("warnings"))
             self.status_detail.setText(f"{len(completed)} completados · {len(failed)} con error")
             self.open_button.setVisible(True)
         else:
-            self.status_title.setText("No se pudo completar")
-            message = failed[-1][1] if failed else "Error desconocido"
+            self.status_title.setText(tr("failed"))
+            message = failed[-1][1] if failed else tr("unknown_error")
             self.status_detail.setText(message)
             QMessageBox.warning(self, "LocallyFPS", message)
         self.worker = None
@@ -840,9 +1058,9 @@ class MainWindow(QMainWindow):
         if not self.worker or not self.thread or not self.thread.isRunning():
             return
         self.stop_button.setEnabled(False)
-        self.stop_button.setText("Deteniendo…")
-        self.status_title.setText("Deteniendo el proceso…")
-        self.status_detail.setText("Cerrando el motor y limpiando archivos temporales")
+        self.stop_button.setText(tr("stopping"))
+        self.status_title.setText(tr("stopping"))
+        self.status_detail.setText(tr("stopping_detail"))
         self.worker.request_stop()
 
     @Slot(list)
@@ -852,107 +1070,222 @@ class MainWindow(QMainWindow):
         self.start_button.setEnabled(True)
         self.stop_button.setVisible(False)
         self.stop_button.setEnabled(True)
-        self.stop_button.setText("■  Detener")
+        self.stop_button.setText(f"■  {tr('stop')}")
         self.clear_button.setEnabled(True)
         self.fps_combo.setEnabled(True)
-        self.status_title.setText("Proceso detenido")
-        self.status_detail.setText("Se canceló de forma segura y se limpiaron los archivos temporales")
+        self.custom_fps.setEnabled(True)
+        self.status_title.setText(tr("stopped"))
+        self.status_detail.setText(tr("stopped_detail"))
         if completed:
             self.open_button.setVisible(True)
         self.worker = None
         self.thread = None
 
     def _open_results(self):
-        directory = Path(self.output_paths[-1]).parent if self.output_paths else paths.DOWNLOADS_DIR / "interpoled_locallyfps"
+        configured = config.CONFIG.get("output_directory", "").strip()
+        directory = Path(self.output_paths[-1]).parent if self.output_paths else Path(
+            configured or paths.DOWNLOADS_DIR / "interpoled_locallyfps"
+        ).expanduser()
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(directory)))
 
     def _update_fps_value(self, *_args):
         value = self.fps_combo.currentData()
-        self.fps_value.setText(str(int(value)))
+        custom = value == "custom"
+        self.custom_fps.setVisible(custom)
+        self.fps_value.setText(format_fps(self.custom_fps.value() if custom else value))
+
+    def _target_fps(self):
+        value = self.fps_combo.currentData()
+        return float(self.custom_fps.value() if value == "custom" else value)
 
     def _show_settings(self):
         dialog = SettingsDialog(self)
         dialog.repair_requested.connect(self._show_repair)
+        dialog.maintenance_requested.connect(self._maintenance)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             saved_fps = config.CONFIG.get("default_target_fps", "60")
-            index = self.fps_combo.findData(float(saved_fps))
+            number = float(saved_fps)
+            index = self.fps_combo.findData(number if saved_fps in {"60", "120", "240"} else "custom")
             self.fps_combo.setCurrentIndex(max(0, index))
+            self.custom_fps.setValue(max(1, min(1000, number)))
+            self._update_fps_value()
 
     def _show_repair(self):
         self.pages.setCurrentWidget(self.onboarding_page)
         self.setup_content.setCurrentIndex(1)
-        self.setup_steps.setText("COMPROBACIÓN DEL MOTOR")
-        self.setup_title.setText("Comprobando la magia")
-        self.setup_subtitle.setText("Verificaremos los componentes y repararemos automáticamente lo que falte.")
+        self.setup_steps.setText("FFMPEG  ·  RIFE")
+        self.setup_title.setText(tr("checking"))
+        self.setup_subtitle.setText(tr("checking_hint"))
         self.setup_progress.setValue(0)
-        self.setup_button.setText("Comprobar ahora")
+        self.setup_button.setText(tr("check_now"))
 
-    def _theme_notice(self):
-        QMessageBox.information(self, "Apariencia", "El modo oscuro es el diseño de esta beta. El modo del sistema llegará durante la v4.")
+    def _maintenance(self, action):
+        if self.thread and self.thread.isRunning():
+            QMessageBox.information(self, tr("working_close"), tr("working_close_detail"))
+            return
+        if QMessageBox.question(
+            self, tr("reset"), tr("maintenance_confirm"),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        ) != QMessageBox.StandardButton.Yes:
+            return
+        if action == "settings":
+            language = config.CONFIG.get("language", paths.DEFAULT_LANGUAGE)
+            config.CONFIG.clear()
+            config.CONFIG.update(config.DEFAULT_CONFIG)
+            config.CONFIG["language"] = language
+            config.CONFIG["onboarding_complete"] = not paths.any_dep_missing()
+            config.save_config()
+            apply_theme(QApplication.instance())
+            self.apply_language()
+            QMessageBox.information(self, tr("maintenance_done"), tr("settings_reset"))
+        elif action == "dependencies":
+            for directory in (paths._FFMPEG_DIR, paths._RIFE_DIR, paths.MODELS_DIR):
+                if directory:
+                    shutil.rmtree(directory, ignore_errors=True)
+            paths.ensure_dirs()
+            QMessageBox.information(self, tr("maintenance_done"), tr("dependencies_removed"))
+            self._show_repair()
+        elif action == "cache":
+            shutil.rmtree(paths.CACHE_DIR, ignore_errors=True)
+            paths.CACHE_DIR.mkdir(parents=True, exist_ok=True)
+            QMessageBox.information(self, tr("maintenance_done"), tr("cache_cleared"))
+
+    def _cycle_theme(self):
+        modes = ("system", "light", "dark")
+        current = config.CONFIG.get("theme", "system")
+        config.CONFIG["theme"] = modes[(modes.index(current) + 1) % len(modes)] if current in modes else "system"
+        config.save_config()
+        apply_theme(QApplication.instance())
+        self._update_theme_button()
+
+    def _update_theme_button(self):
+        mode = config.CONFIG.get("theme", "system")
+        self.theme_button.setText({"system": "◐", "light": "☀", "dark": "☾"}.get(mode, "◐"))
+        self.theme_button.setToolTip(f"{tr('appearance_cycle')}: {tr(mode)}")
+
+    def apply_language(self):
+        if not hasattr(self, "videos_title"):
+            return
+        self.videos_title.setText(tr("videos"))
+        self.drop.apply_language()
+        self.clear_button.setText(tr("clear"))
+        self.fps_label.setText(tr("fps"))
+        self.fps_combo.setItemText(3, tr("custom"))
+        self.start_button.setText(tr("enhance"))
+        self.stop_button.setText(f"■  {tr('stop')}")
+        self.open_button.setText(tr("open"))
+        self.settings_button.setToolTip(tr("settings"))
+        self._update_theme_button()
+        self._apply_onboarding_language()
+        if not (self.thread and self.thread.isRunning()):
+            if self.video_paths:
+                count = len(self.video_paths)
+                key = "queued_one" if count == 1 else "queued_many"
+                self.status_title.setText(tr(key).format(count=count))
+                self.status_detail.setText(tr("queued_detail"))
+            else:
+                self.status_title.setText(tr("waiting"))
+                self.status_detail.setText(tr("waiting_detail"))
 
     def closeEvent(self, event):
         if ((self.thread and self.thread.isRunning()) or
                 (self.setup_thread and self.setup_thread.isRunning())):
             QMessageBox.information(
-                self, "LocallyFPS está trabajando",
-                "Esperá a que termine el video actual antes de cerrar la aplicación.",
+                self, tr("working_close"), tr("working_close_detail"),
             )
             event.ignore()
             return
         event.accept()
 
 
-STYLE = """
-QWidget#root { background: #080b16; color: #f8fafc; }
-QStackedWidget#root { background: #080b16; }
-QWidget { font-family: Inter, "Segoe UI", sans-serif; font-size: 14px; }
-QLabel { color: #eef2f7; }
-QDialog#settingsDialog { background: #090c16; color: #f8fafc; }
-QLabel#brand { font-size: 27px; font-weight: 800; color: #f8fafc; }
-QLabel#beta { color: #c4b5fd; background: rgba(139,92,246,0.18); border: 1px solid rgba(167,139,250,0.36); border-radius: 10px; padding: 4px 9px; font-size: 10px; font-weight: 700; }
-QLabel#headline { font-size: 28px; font-weight: 750; color: #ffffff; }
-QLabel#subtitle { color: #9aa5ba; font-size: 14px; line-height: 1.4; }
-QLabel#muted { color: #7f8aa3; font-size: 12px; }
-QLabel#fieldLabel, QLabel#eyebrow { color: #98a3ba; font-size: 11px; font-weight: 700; letter-spacing: 1px; }
-QLabel#statusTitle { color: #f8fafc; font-size: 18px; font-weight: 700; }
-QLabel#setupTitle { color: #ffffff; font-size: 26px; font-weight: 750; }
-QLabel#steps { color: #a78bfa; font-size: 13px; font-weight: 700; letter-spacing: 2px; }
-QLabel#successPill { color: #a7f3d0; background: #12352d; border: 1px solid #276255; border-radius: 9px; padding: 7px 11px; }
-QFrame#panel { background: rgba(17,22,40,0.94); border: 1px solid #202943; border-radius: 22px; }
-QFrame#workspace { background: #202431; border: 1px solid #303647; border-radius: 25px; }
-QFrame#flowCard { background: #343947; border: 1px solid #424858; border-radius: 20px; }
-QFrame#setupCard { background: #111628; border: 1px solid #29324c; border-radius: 26px; }
-QFrame#settingsSection { background: #111628; border: 1px solid #252e47; border-radius: 16px; }
-QFrame#dropCard { background: rgba(11,15,30,0.72); border: 1px dashed #475375; border-radius: 18px; }
-QFrame#dropCard:hover, QFrame#dropCard[dragging="true"] { background: rgba(92,63,180,0.16); border: 1px solid #8b5cf6; }
-QLabel#dropIcon { color: #a78bfa; font-size: 38px; }
-QLabel#dropTitle { color: #eef2ff; font-size: 17px; font-weight: 700; }
-QLabel#flowIcon { color: #f8fafc; font-size: 42px; font-weight: 500; }
-QComboBox { color: #eef2ff; background: #0d1325; border: 1px solid #2a3555; border-radius: 11px; padding: 10px 14px; min-height: 20px; }
-QComboBox:hover { border-color: #7255cc; }
-QComboBox::drop-down { border: 0; width: 28px; }
-QComboBox QAbstractItemView { color: #eef2ff; background: #10172a; selection-background-color: #6d4dd1; border: 1px solid #2a3555; }
+def _effective_theme(app):
+    selected = config.CONFIG.get("theme", "system")
+    if selected != "system":
+        return selected
+    try:
+        return "light" if app.styleHints().colorScheme() == Qt.ColorScheme.Light else "dark"
+    except (AttributeError, TypeError):
+        return "dark"
+
+
+def style_for_theme(theme):
+    if theme == "light":
+        c = {
+            "root": "#f4f4f4", "workspace": "#e7e7e7", "card": "#ffffff",
+            "field": "#f7f7f7", "text": "#171717", "muted": "#666666",
+            "border": "#c9c9c9", "hover": "#dddddd", "selected": "#2b2b2b",
+            "selected_text": "#ffffff", "primary": "#151515", "primary_text": "#ffffff",
+            "disabled": "#bdbdbd", "disabled_text": "#777777",
+        }
+    else:
+        c = {
+            "root": "#0b0b0b", "workspace": "#202020", "card": "#303030",
+            "field": "#171717", "text": "#f2f2f2", "muted": "#a0a0a0",
+            "border": "#4a4a4a", "hover": "#414141", "selected": "#eeeeee",
+            "selected_text": "#151515", "primary": "#f0f0f0", "primary_text": "#111111",
+            "disabled": "#393939", "disabled_text": "#777777",
+        }
+    return """
+QWidget { font-family: Inter, "Segoe UI", sans-serif; font-size: 14px; color: %(text)s; }
+QWidget#root, QStackedWidget#root, QDialog, QMessageBox { background: %(root)s; color: %(text)s; }
+QLabel { color: %(text)s; background: transparent; }
+QLabel#brand { font-size: 27px; font-weight: 800; }
+QLabel#beta { color: %(text)s; background: %(hover)s; border: 1px solid %(border)s; border-radius: 10px; padding: 4px 9px; font-size: 10px; font-weight: 700; }
+QLabel#headline { font-size: 28px; font-weight: 750; }
+QLabel#subtitle, QLabel#muted { color: %(muted)s; }
+QLabel#subtitle { font-size: 14px; }
+QLabel#muted { font-size: 12px; }
+QLabel#fieldLabel, QLabel#eyebrow { color: %(muted)s; font-size: 11px; font-weight: 700; letter-spacing: 1px; }
+QLabel#statusTitle { font-size: 18px; font-weight: 700; }
+QLabel#setupTitle { font-size: 26px; font-weight: 750; }
+QLabel#steps { color: %(muted)s; font-size: 13px; font-weight: 700; letter-spacing: 2px; }
+QFrame#workspace { background: %(workspace)s; border: 1px solid %(border)s; border-radius: 25px; }
+QFrame#panel, QFrame#flowCard, QFrame#setupCard, QFrame#settingsSection { background: %(card)s; border: 1px solid %(border)s; border-radius: 20px; }
+QFrame#setupCard { border-radius: 26px; }
+QFrame#settingsSection { border-radius: 16px; }
+QFrame#dropCard { background: %(field)s; border: 1px dashed %(border)s; border-radius: 18px; }
+QFrame#dropCard:hover, QFrame#dropCard[dragging="true"] { background: %(hover)s; border: 1px solid %(text)s; }
+QLabel#dropIcon { color: %(text)s; font-size: 38px; }
+QLabel#dropTitle { font-size: 17px; font-weight: 700; }
+QLabel#flowIcon { font-size: 42px; font-weight: 500; }
+QComboBox, QLineEdit, QDoubleSpinBox { color: %(text)s; background: %(field)s; border: 1px solid %(border)s; border-radius: 11px; padding: 10px 14px; min-height: 20px; selection-background-color: %(selected)s; selection-color: %(selected_text)s; }
+QComboBox:hover, QLineEdit:hover, QDoubleSpinBox:hover { border-color: %(text)s; }
+QComboBox::drop-down { border: none; background: transparent; width: 28px; }
+QComboBox::down-arrow { image: none; border: none; width: 0; height: 0; }
+QDoubleSpinBox::up-button, QDoubleSpinBox::down-button { width: 0; border: none; background: transparent; }
+QComboBox QAbstractItemView, QAbstractItemView { color: %(text)s; background: %(field)s; alternate-background-color: %(field)s; border: 1px solid %(border)s; outline: 0; selection-background-color: %(selected)s; selection-color: %(selected_text)s; padding: 3px; }
+QComboBox QAbstractItemView::item { border: none; min-height: 32px; padding: 4px 10px; }
 QPushButton { border: 0; border-radius: 12px; padding: 10px 16px; font-weight: 650; }
-QPushButton#primaryButton { color: white; background: #7652df; font-size: 15px; }
-QPushButton#primaryButton:hover { background: #8968ea; }
-QPushButton#primaryButton:pressed { background: #6342c5; }
-QPushButton#primaryButton:disabled { color: #727b91; background: #252b3c; }
-QPushButton#ghostButton { color: #b9c2d6; background: #151c31; border: 1px solid #293451; }
-QPushButton#ghostButton:hover { color: white; border-color: #6650ae; background: #1b2340; }
-QPushButton#dangerButton { color: #fecaca; background: #3b1821; border: 1px solid #71303e; }
-QPushButton#dangerButton:hover { color: white; background: #57202d; border-color: #a74458; }
-QPushButton#dangerButton:disabled { color: #8f6970; background: #28151a; border-color: #42232b; }
-QPushButton#iconButton { color: #f8fafc; background: transparent; font-size: 27px; padding: 5px; min-width: 42px; }
-QPushButton#iconButton:hover { color: #c4b5fd; background: #171b29; }
-QProgressBar { background: #090d19; border: 1px solid #28324e; border-radius: 7px; height: 13px; }
-QProgressBar::chunk { background: #8059e8; border-radius: 6px; }
-QListWidget#queue { color: #cbd5e1; background: transparent; border: 0; outline: 0; }
-QListWidget#queue::item { background: #0e1426; border: 1px solid #202a45; border-radius: 9px; margin: 3px 0; padding: 9px 5px; }
-QListWidget#queue::item:selected { background: #18213a; color: white; border-color: #554399; }
+QPushButton#primaryButton { color: %(primary_text)s; background: %(primary)s; font-size: 15px; }
+QPushButton#primaryButton:hover { background: %(selected)s; color: %(selected_text)s; }
+QPushButton#primaryButton:disabled { color: %(disabled_text)s; background: %(disabled)s; }
+QPushButton#ghostButton, QPushButton#dangerButton { color: %(text)s; background: %(field)s; border: 1px solid %(border)s; }
+QPushButton#ghostButton:hover, QPushButton#dangerButton:hover { background: %(hover)s; border-color: %(text)s; }
+QPushButton#dangerButton:disabled { color: %(disabled_text)s; background: %(disabled)s; border-color: %(border)s; }
+QPushButton#iconButton { color: %(text)s; background: transparent; font-size: 25px; padding: 5px; min-width: 42px; }
+QPushButton#iconButton:hover { background: %(hover)s; }
+QProgressBar { background: %(field)s; border: 1px solid %(border)s; border-radius: 7px; height: 13px; }
+QProgressBar::chunk { background: %(primary)s; border-radius: 6px; }
+QListWidget#queue { color: %(text)s; background: transparent; border: 0; outline: 0; }
+QListWidget#queue::item { background: %(field)s; border: 1px solid %(border)s; border-radius: 9px; margin: 3px 0; padding: 9px 5px; }
+QListWidget#queue::item:selected { background: %(selected)s; color: %(selected_text)s; }
+QMessageBox QPushButton { color: %(text)s; background: %(field)s; border: 1px solid %(border)s; min-width: 74px; }
+QMessageBox QPushButton:hover { background: %(hover)s; border-color: %(text)s; }
+QMessageBox QLabel#qt_msgboxex_icon_label { min-width: 0; max-width: 0; qproperty-pixmap: none; }
+QToolTip { color: %(text)s; background: %(card)s; border: 1px solid %(border)s; padding: 5px; }
 QScrollBar:vertical { background: transparent; width: 7px; }
-QScrollBar::handle:vertical { background: #33405f; border-radius: 3px; min-height: 22px; }
+QScrollBar::handle:vertical { background: %(border)s; border-radius: 3px; min-height: 22px; }
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
-"""
+""" % c
+
+
+def apply_theme(app):
+    if app is None:
+        return
+    theme = _effective_theme(app)
+    app.setStyleSheet(style_for_theme(theme))
+    for widget in app.topLevelWidgets():
+        widget.update()
 
 
 def main(argv=None):
@@ -970,9 +1303,13 @@ def main(argv=None):
     app.setApplicationName("LocallyFPS")
     app.setApplicationDisplayName("LocallyFPS")
     app.setStyle("Fusion")
-    app.setStyleSheet(STYLE)
     paths.ensure_dirs()
     config.load_config()
+    apply_theme(app)
+    try:
+        app.styleHints().colorSchemeChanged.connect(lambda *_args: apply_theme(app))
+    except AttributeError:
+        pass
     icon = paths.RESOURCE_DIR / "packaging" / "locallyfps.svg"
     if icon.exists():
         app.setWindowIcon(QIcon(str(icon)))

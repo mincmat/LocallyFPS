@@ -3,8 +3,13 @@
 ## 4.0.0-beta.1 - Unreleased
 
 - Add the first PySide6 desktop interface with drag-and-drop, video queue,
-  automatic FPS selection, safe output naming, live progress and an animated
+  explicit and custom target FPS, safe output naming, live progress and an animated
   interpolation visualization.
+- Add monochrome light, dark and system appearance modes, themed dialogs and
+  borderless drop-down menus.
+- Apply language changes immediately and allow the output folder to be changed.
+- Add safe maintenance actions for resetting settings, reinstalling dependencies
+  and clearing temporary cache without deleting exported videos.
 - Add a reproducible Linux AppImage build for the desktop beta.
 - Rename the internal `platform` package to `platforms` so it no longer shadows
   Python's standard library during GUI startup and packaging.
