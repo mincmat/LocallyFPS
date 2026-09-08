@@ -5,15 +5,17 @@ import sys
 import threading
 from pathlib import Path
 
-from PySide6.QtCore import QObject, QSize, Qt, QThread, QTimer, QUrl, Signal, Slot, QLocale
+from PySide6.QtCore import QObject, QRectF, QSize, Qt, QThread, QTimer, QUrl, Signal, Slot, QLocale
 from PySide6.QtGui import (
-    QColor, QDesktopServices, QFont, QIcon, QImage, QPainter,
+    QColor, QDesktopServices, QFont, QIcon, QImage, QPainter, QPainterPath,
+    QPen, QPixmap,
 )
 from PySide6.QtWidgets import (
     QApplication, QComboBox, QFileDialog, QFrame, QHBoxLayout, QLabel,
     QListWidget, QListWidgetItem, QMainWindow, QMessageBox, QPushButton,
     QSizePolicy, QStackedWidget, QVBoxLayout, QWidget, QLineEdit,
-    QProgressBar, QDialog, QDoubleSpinBox,
+    QProgressBar, QDialog, QDoubleSpinBox, QGraphicsBlurEffect,
+    QGraphicsPixmapItem, QGraphicsScene,
 )
 
 from core import paths
@@ -379,10 +381,28 @@ class MagicCanvas(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setMinimumHeight(245)
+        self.setMinimumHeight(160)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self._progress = 0.0
         self._active = False
         self._preview = None
+        self._blurred_preview = None
+        self._aspect_ratio = 16 / 9
+
+    def hasHeightForWidth(self):
+        return True
+
+    def heightForWidth(self, width):
+        return max(160, min(360, round(width / self._aspect_ratio)))
+
+    def sizeHint(self):
+        return QSize(360, self.heightForWidth(360))
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        desired_height = self.heightForWidth(max(1, event.size().width()))
+        if self.minimumHeight() != desired_height:
+            self.setFixedHeight(desired_height)
 
     def set_progress(self, value):
         self._progress = max(0.0, min(1.0, float(value)))
@@ -395,38 +415,63 @@ class MagicCanvas(QWidget):
     @Slot(object)
     def set_preview(self, image):
         self._preview = image if isinstance(image, QImage) and not image.isNull() else None
+        self._blurred_preview = self._blur_image(self._preview) if self._preview is not None else None
+        if self._preview is not None:
+            self._aspect_ratio = self._preview.width() / max(1, self._preview.height())
+            self.setFixedHeight(self.heightForWidth(max(1, self.width())))
+        self.updateGeometry()
         self.update()
 
     def clear_preview(self):
         self._preview = None
+        self._blurred_preview = None
+        self._aspect_ratio = 16 / 9
+        self.setFixedHeight(self.heightForWidth(max(1, self.width())))
+        self.updateGeometry()
         self.update()
+
+    @staticmethod
+    def _blur_image(image):
+        """Render Qt's high-quality Gaussian blur once per video preview."""
+        pixmap = QPixmap.fromImage(image)
+        scene = QGraphicsScene()
+        item = QGraphicsPixmapItem(pixmap)
+        effect = QGraphicsBlurEffect()
+        effect.setBlurRadius(14)
+        effect.setBlurHints(QGraphicsBlurEffect.BlurHint.QualityHint)
+        item.setGraphicsEffect(effect)
+        scene.addItem(item)
+        source = effect.boundingRectFor(QRectF(pixmap.rect()))
+        result = QImage(source.size().toSize(), QImage.Format.Format_ARGB32_Premultiplied)
+        result.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(result)
+        scene.render(painter, QRectF(result.rect()), source)
+        painter.end()
+        return result
 
     def paintEvent(self, _event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
         dark = _effective_theme(QApplication.instance()) == "dark"
-        painter.fillRect(self.rect(), QColor("#1f1f1f") if dark else QColor("#dedede"))
-        if self._preview is not None:
-            # Scale down then back up: it is fast and gives a soft, consistent
-            # blur without an expensive per-frame graphics effect.
-            preview_size = self.size()
-            small_size = QSize(max(1, self.width() // 10), max(1, self.height() // 10))
-            blurred = self._preview.scaled(
-                small_size, Qt.AspectRatioMode.KeepAspectRatioByExpanding,
-                Qt.TransformationMode.SmoothTransformation,
-            ).scaled(
-                preview_size, Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+        frame = self.rect().adjusted(1, 1, -1, -1)
+        rounded = QPainterPath()
+        rounded.addRoundedRect(QRectF(frame), 18, 18)
+        painter.setClipPath(rounded)
+        painter.fillRect(frame, QColor("#1f1f1f") if dark else QColor("#dedede"))
+        if self._blurred_preview is not None:
+            blurred = self._blurred_preview.scaled(
+                frame.size(), Qt.AspectRatioMode.KeepAspectRatioByExpanding,
                 Qt.TransformationMode.SmoothTransformation,
             )
             painter.drawImage(
-                (self.width() - blurred.width()) // 2,
-                (self.height() - blurred.height()) // 2,
+                frame.center().x() - blurred.width() // 2,
+                frame.center().y() - blurred.height() // 2,
                 blurred,
             )
-            painter.fillRect(self.rect(), QColor(0, 0, 0, 92))
+            painter.fillRect(frame, QColor(0, 0, 0, 92))
 
-        percent_rect = self.rect()
+        percent_rect = frame
         shadow = QColor(0, 0, 0, 175)
         font = QFont("Sans Serif", 31, QFont.Weight.DemiBold)
         painter.setFont(font)
@@ -434,6 +479,11 @@ class MagicCanvas(QWidget):
         painter.drawText(percent_rect.translated(1, 2), Qt.AlignmentFlag.AlignCenter, f"{round(self._progress * 100)}%")
         painter.setPen(QColor("#ffffff"))
         painter.drawText(percent_rect, Qt.AlignmentFlag.AlignCenter, f"{round(self._progress * 100)}%")
+        painter.setClipping(False)
+        border = QColor("#555555") if dark else QColor("#bdbdbd")
+        painter.setPen(QPen(border, 1))
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawPath(rounded)
 
 
 class DropCard(QFrame):
