@@ -1002,6 +1002,12 @@ class MainWindow(QMainWindow):
 
         left = QFrame()
         left.setObjectName("flowCard")
+        # A card's child widgets have very different size hints (a video list,
+        # controls, and a 16:9 preview).  Ignore those hints horizontally so
+        # the parent layout can always divide the workspace into three equal
+        # columns, whether the window is restored or maximized.
+        left.setMinimumWidth(0)
+        left.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Expanding)
         left_layout = QVBoxLayout(left)
         left_layout.setContentsMargins(22, 22, 22, 22)
         left_layout.setSpacing(14)
@@ -1019,6 +1025,8 @@ class MainWindow(QMainWindow):
 
         middle = QFrame()
         middle.setObjectName("flowCard")
+        middle.setMinimumWidth(0)
+        middle.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Expanding)
         middle_layout = QVBoxLayout(middle)
         middle_layout.setContentsMargins(24, 24, 24, 24)
         middle_layout.setSpacing(18)
@@ -1070,7 +1078,8 @@ class MainWindow(QMainWindow):
 
         right = QFrame()
         right.setObjectName("flowCard")
-        right.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        right.setMinimumWidth(0)
+        right.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Expanding)
         right_layout = QVBoxLayout(right)
         right_layout.setContentsMargins(22, 18, 22, 22)
         right_layout.setSpacing(10)
