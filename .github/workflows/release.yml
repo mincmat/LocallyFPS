@@ -134,6 +134,28 @@ jobs:
           New-Item -ItemType File "dist/LocallyFPS-portable/.locallyfps-portable" | Out-Null
           Compress-Archive -CompressionLevel Optimal -Path "dist/LocallyFPS-portable" -DestinationPath "dist/release/LocallyFPS-v$version-windows-x64-portable.zip"
 
+      - name: Test installed setup and extracted portable package
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $version = python -c "from core.paths import APP_VERSION; print(APP_VERSION)"
+          $setup = "$pwd/dist/release/LocallyFPS-v$version-windows-x64-setup.exe"
+          $installDir = "$env:RUNNER_TEMP/LocallyFPS-installed"
+          $installer = Start-Process -FilePath $setup -ArgumentList @(
+            "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-", "/DIR=$installDir"
+          ) -Wait -PassThru
+          if ($installer.ExitCode -ne 0) { exit $installer.ExitCode }
+          & "$installDir/LocallyFPS.exe" --dependency-smoke-test
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & "$installDir/LocallyFPS.exe" --pipeline-smoke-test
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $portableDir = "$env:RUNNER_TEMP/LocallyFPS-portable-test"
+          Expand-Archive "dist/release/LocallyFPS-v$version-windows-x64-portable.zip" $portableDir
+          $portableExe = "$portableDir/LocallyFPS-portable/LocallyFPS.exe"
+          if (-not (Test-Path "$portableDir/LocallyFPS-portable/.locallyfps-portable")) { exit 1 }
+          & $portableExe --dependency-smoke-test
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: Sign and package macOS DMG
         if: runner.os == 'macOS'
         shell: bash
@@ -145,6 +167,21 @@ jobs:
           cp -R "dist/LocallyFPS.app" "dist/dmg/"
           ln -s /Applications "dist/dmg/Applications"
           hdiutil create -volname "LocallyFPS" -srcfolder "dist/dmg" -ov -format UDZO "dist/release/LocallyFPS-v${version}-macos-arm64.dmg"
+
+      - name: Test mounted macOS DMG
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          version="$(python -c 'from core.paths import APP_VERSION; print(APP_VERSION)')"
+          mountpoint="$RUNNER_TEMP/LocallyFPS-volume"
+          mkdir -p "$mountpoint"
+          hdiutil attach -readonly -nobrowse -mountpoint "$mountpoint" "dist/release/LocallyFPS-v${version}-macos-arm64.dmg"
+          trap 'hdiutil detach "$mountpoint"' EXIT
+          app="$mountpoint/LocallyFPS.app"
+          codesign --verify --deep --strict --verbose=2 "$app"
+          "$app/Contents/MacOS/LocallyFPS" --dependency-smoke-test
+          "$app/Contents/MacOS/LocallyFPS" --pipeline-smoke-test
+          QT_QPA_PLATFORM=offscreen "$app/Contents/MacOS/LocallyFPS" --smoke-test
 
       - name: Stage Linux artifact
         if: runner.os == 'Linux'
