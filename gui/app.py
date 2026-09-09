@@ -17,7 +17,7 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import (
     QApplication, QComboBox, QFileDialog, QFrame, QHBoxLayout, QLabel,
     QListWidget, QListWidgetItem, QMainWindow, QMessageBox, QPushButton,
-    QSizePolicy, QStackedWidget, QVBoxLayout, QWidget, QLineEdit,
+    QScrollArea, QSizePolicy, QStackedWidget, QVBoxLayout, QWidget, QLineEdit,
     QProgressBar, QDialog, QDoubleSpinBox, QGraphicsBlurEffect, QGraphicsOpacityEffect,
     QGraphicsPixmapItem, QGraphicsScene,
 )
@@ -384,10 +384,10 @@ class SettingsDialog(QDialog):
         # the user explicitly saves them.
         self._original_language = config.CONFIG.get("language", "en")
         self._original_theme = config.CONFIG.get("theme", "dark")
-        # Three two-line preference rows need their full text height.  Qt's
-        # compact size hint can otherwise squeeze the labels below their font
-        # metrics when the dialog is first opened.
-        self.setMinimumSize(720, 710)
+        # The content scrolls independently from the header and actions.  This
+        # prevents Qt from squeezing form rows when the main window, display
+        # scale or translated strings leave less vertical room.
+        self.setMinimumSize(720, 560)
         self.setMaximumHeight(780)
         self.setObjectName("settingsDialog")
         root = QVBoxLayout(self)
@@ -399,6 +399,20 @@ class SettingsDialog(QDialog):
         self.subtitle.setObjectName("subtitle")
         root.addWidget(self.title)
         root.addWidget(self.subtitle)
+
+        self.scroll = QScrollArea()
+        self.scroll.setObjectName("settingsScroll")
+        self.scroll.setWidgetResizable(True)
+        self.scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.scroll.setMinimumHeight(380)
+        body = QWidget()
+        body.setObjectName("settingsBody")
+        body_layout = QVBoxLayout(body)
+        body_layout.setContentsMargins(0, 0, 8, 0)
+        body_layout.setSpacing(12)
+        self.scroll.setWidget(body)
 
         general = QFrame()
         general.setObjectName("settingsSection")
@@ -426,7 +440,7 @@ class SettingsDialog(QDialog):
         self.theme, self.theme_title, self.theme_hint = self._row_combo(
             form, theme_values, config.CONFIG.get("theme", "dark"),
         )
-        root.addWidget(general)
+        body_layout.addWidget(general)
 
         output = QFrame()
         output.setObjectName("settingsSection")
@@ -447,7 +461,8 @@ class SettingsDialog(QDialog):
         self.choose_button.clicked.connect(self._choose_output)
         output_row.addWidget(self.choose_button)
         output_layout.addLayout(output_row)
-        root.addWidget(output)
+        output.setMinimumHeight(92)
+        body_layout.addWidget(output)
 
         engine = QFrame()
         engine.setObjectName("settingsSection")
@@ -455,8 +470,10 @@ class SettingsDialog(QDialog):
         engine_layout.setContentsMargins(24, 18, 24, 18)
         engine_text = QVBoxLayout()
         self.engine_title = QLabel()
+        self.engine_title.setWordWrap(True)
         self.engine_hint = QLabel()
         self.engine_hint.setObjectName("muted")
+        self.engine_hint.setWordWrap(True)
         engine_text.addWidget(self.engine_title)
         engine_text.addWidget(self.engine_hint)
         engine_layout.addLayout(engine_text)
@@ -465,7 +482,8 @@ class SettingsDialog(QDialog):
         self.repair.setObjectName("ghostButton")
         self.repair.clicked.connect(self._repair)
         engine_layout.addWidget(self.repair)
-        root.addWidget(engine)
+        engine.setMinimumHeight(82)
+        body_layout.addWidget(engine)
 
         updates = QFrame()
         updates.setObjectName("settingsSection")
@@ -473,8 +491,10 @@ class SettingsDialog(QDialog):
         updates_layout.setContentsMargins(24, 15, 24, 15)
         updates_text = QVBoxLayout()
         self.updates_title = QLabel()
+        self.updates_title.setWordWrap(True)
         self.updates_hint = QLabel()
         self.updates_hint.setObjectName("muted")
+        self.updates_hint.setWordWrap(True)
         updates_text.addWidget(self.updates_title)
         updates_text.addWidget(self.updates_hint)
         updates_layout.addLayout(updates_text)
@@ -483,12 +503,15 @@ class SettingsDialog(QDialog):
         self.check_updates.setObjectName("ghostButton")
         self.check_updates.clicked.connect(self._check_updates)
         updates_layout.addWidget(self.check_updates)
-        root.addWidget(updates)
+        updates.setMinimumHeight(76)
+        body_layout.addWidget(updates)
         self.maintenance = QPushButton()
         self.maintenance.setObjectName("ghostButton")
         self.maintenance.clicked.connect(self._request_reset)
-        root.addWidget(self.maintenance)
-        root.addStretch()
+        self.maintenance.setMinimumHeight(48)
+        body_layout.addWidget(self.maintenance)
+        body_layout.addStretch()
+        root.addWidget(self.scroll, 1)
         actions = QHBoxLayout()
         actions.addStretch()
         self.cancel_button = QPushButton()
@@ -509,19 +532,24 @@ class SettingsDialog(QDialog):
         self.apply_language()
 
     def _row_combo(self, layout, values, selected):
-        row = QHBoxLayout()
+        row_widget = QWidget()
+        row_widget.setObjectName("settingsRow")
+        row_widget.setMinimumHeight(54)
+        row = QHBoxLayout(row_widget)
+        row.setContentsMargins(0, 0, 0, 0)
         row.setSpacing(18)
         labels = QVBoxLayout()
         labels.setSpacing(2)
         title = QLabel()
         title.setMinimumHeight(18)
+        title.setWordWrap(True)
         hint = QLabel()
         hint.setObjectName("muted")
         hint.setMinimumHeight(16)
+        hint.setWordWrap(True)
         labels.addWidget(title)
         labels.addWidget(hint)
-        row.addLayout(labels)
-        row.addStretch()
+        row.addLayout(labels, 1)
         combo = ThemedComboBox()
         for name, value in values:
             combo.addItem(name, value)
@@ -529,7 +557,7 @@ class SettingsDialog(QDialog):
         combo.setMinimumSize(230, 44)
         configure_combo_popup(combo)
         row.addWidget(combo)
-        layout.addLayout(row)
+        layout.addWidget(row_widget)
         return combo, title, hint
 
     def apply_language(self):
@@ -2013,6 +2041,12 @@ def style_for_theme(theme):
 QWidget { font-family: Inter, "Segoe UI", sans-serif; font-size: 14px; color: %(text)s; }
 QWidget#root, QStackedWidget#root, QDialog, QMessageBox { background: %(root)s; color: %(text)s; }
 QWidget#inAppOverlay { background: rgba(0, 0, 0, 150); }
+QWidget#settingsBody, QScrollArea#settingsScroll, QScrollArea#settingsScroll > QWidget > QWidget { background: transparent; border: 0; }
+QScrollBar:vertical { background: transparent; width: 7px; margin: 2px 0; }
+QScrollBar::handle:vertical { background: %(border)s; border-radius: 3px; min-height: 34px; }
+QScrollBar::handle:vertical:hover { background: %(muted)s; }
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; background: transparent; }
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: transparent; }
 QFrame#modalSurface { background: %(root)s; border: 1px solid %(border)s; border-radius: 24px; }
 QDialog#settingsDialog { background: transparent; border: 0; }
 QLabel { color: %(text)s; background: transparent; }
