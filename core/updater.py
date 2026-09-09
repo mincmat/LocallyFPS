@@ -7,6 +7,7 @@ import sys
 import tempfile
 import urllib.request
 import zipfile
+import os
 from pathlib import Path
 
 from . import paths
@@ -15,7 +16,8 @@ from .console import status, ask_yes_no
 from .i18n import _
 from .update_utils import (
     GITHUB_API, get_platform_base_name,
-    pick_asset, create_swap_script, launch_swap, human_size, version_key,
+    get_platform_name, pick_asset, create_swap_script, create_appimage_swap_script,
+    launch_swap, human_size, version_key,
 )
 from .deps import safe_extract_zip
 
@@ -26,18 +28,85 @@ class UpdateCheckError(RuntimeError):
     """Raised when update availability could not be determined reliably."""
 
 
-def check_for_updates():
+def _latest_release():
     try:
         req = urllib.request.Request(
             f"{GITHUB_API}/latest",
             headers={"Accept": "application/vnd.github+json", "User-Agent": "LocallyFPS-Updater"},
         )
         with urllib.request.urlopen(req, timeout=15) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
+            return json.loads(resp.read().decode("utf-8"))
     except Exception as exc:
         raise UpdateCheckError(
             _("Could not connect to GitHub to check for updates.")
         ) from exc
+
+
+def _checksum_asset(assets):
+    return next((a for a in assets if a.get("name") == "SHA256SUMS.txt"), None)
+
+
+def _appimage_asset(assets):
+    """Find the Linux AppImage published for the release, if any."""
+    matches = [
+        asset for asset in assets
+        if asset.get("name", "").lower().endswith(".appimage")
+        and "locallyfps" in asset.get("name", "").lower()
+    ]
+    return matches[0] if len(matches) == 1 else None
+
+
+def _current_appimage():
+    candidate = os.environ.get("APPIMAGE")
+    if not candidate:
+        return None
+    path = Path(candidate).expanduser().resolve()
+    return path if path.suffix.lower() == ".appimage" and path.is_file() else None
+
+
+def check_for_updates_detailed():
+    """Return a verified-installation update description for the current app.
+
+    The check itself does not download or modify anything.  An AppImage is only
+    selected when LocallyFPS is actually running from an AppImage; otherwise
+    the established portable archive is reported as a manual download.
+    """
+    data = _latest_release()
+    latest_tag = data.get("tag_name", "")
+    if not latest_tag:
+        raise UpdateCheckError(_("GitHub returned a release without a version tag."))
+    current, latest = version_key(CURRENT_VERSION), version_key(latest_tag)
+    if current is None or latest is None:
+        raise UpdateCheckError(_("The latest release has an unsupported version format."))
+    if latest <= current:
+        return None
+
+    assets = data.get("assets", [])
+    checksum = _checksum_asset(assets)
+    platform_name = get_platform_name()
+    appimage = _current_appimage() if platform_name == "linux" else None
+    asset = _appimage_asset(assets) if appimage else None
+    installable = bool(asset and checksum and appimage)
+    if asset is None:
+        base_name = get_platform_base_name()
+        asset = pick_asset(assets, base_name) if base_name else None
+    if not asset:
+        raise UpdateCheckError(_("The latest release has no download for this platform."))
+
+    return {
+        "version": latest_tag,
+        "asset_name": asset.get("name", ""),
+        "download_url": asset.get("browser_download_url", ""),
+        "checksum_url": checksum.get("browser_download_url", "") if checksum else "",
+        "size": int(asset.get("size") or 0),
+        "kind": "appimage" if asset.get("name", "").lower().endswith(".appimage") else "archive",
+        "installable": installable,
+        "manual_url": data.get("html_url", "https://github.com/mincmat/LocallyFPS/releases/latest"),
+    }
+
+
+def check_for_updates():
+    data = _latest_release()
 
     latest_tag = data.get("tag_name", "")
     if not latest_tag:
@@ -69,6 +138,50 @@ def check_for_updates():
         latest_tag, asset.get("browser_download_url"), asset.get("name"),
         checksum_asset.get("browser_download_url") if checksum_asset else None,
     )
+
+
+def _verified_download(url, destination, asset_name, checksum_url, progress_cb=None):
+    """Download an update and insist on the release SHA-256 before staging it."""
+    if not url or not checksum_url:
+        raise UpdateCheckError("The release is missing a required SHA-256 checksum.")
+    try:
+        _download_with_progress(url, str(destination), progress_cb)
+        req = urllib.request.Request(checksum_url, headers={"User-Agent": "LocallyFPS-Updater"})
+        with urllib.request.urlopen(req, timeout=15) as response:
+            sums = response.read().decode("utf-8").splitlines()
+        expected = next(
+            line.split()[0] for line in sums
+            if len(line.split()) >= 2 and line.split()[-1].lstrip("*") == asset_name
+        )
+        digest = hashlib.sha256(Path(destination).read_bytes()).hexdigest()
+        if digest.lower() != expected.lower():
+            raise UpdateCheckError("The update checksum did not match the GitHub release.")
+        return Path(destination)
+    except Exception:
+        Path(destination).unlink(missing_ok=True)
+        raise
+
+
+def stage_appimage_update(update, progress_cb=None):
+    """Download and verify an AppImage beside the running AppImage.
+
+    This only stages the update.  The caller launches the generated helper and
+    exits after the user has explicitly approved the installation.
+    """
+    current = _current_appimage()
+    if not current or not update.get("installable") or update.get("kind") != "appimage":
+        raise UpdateCheckError("This installation cannot update itself safely.")
+    if not os.access(current.parent, os.W_OK):
+        raise UpdateCheckError("LocallyFPS cannot write beside this AppImage.")
+    staged = current.with_name(f".{current.name}.download")
+    _verified_download(
+        update["download_url"], staged, update["asset_name"], update["checksum_url"], progress_cb,
+    )
+    try:
+        return create_appimage_swap_script(current, staged, os.getpid())
+    except Exception:
+        staged.unlink(missing_ok=True)
+        raise
 
 
 def _download_with_progress(url, dest, progress_cb=None):

@@ -140,15 +140,57 @@ def launch_swap(script_path):
             stderr=__import__("subprocess").DEVNULL,
             close_fds=True,
         )
-    else:
-        return __import__("subprocess").Popen(
-            ["bash", str(script_path)],
-            cwd=str(script_path.parent),
-            start_new_session=True,
-            stdout=__import__("subprocess").DEVNULL,
-            stderr=__import__("subprocess").DEVNULL,
-            close_fds=True,
-        )
+    return __import__("subprocess").Popen(
+        ["bash", str(script_path)],
+        cwd=str(script_path.parent),
+        start_new_session=True,
+        stdout=__import__("subprocess").DEVNULL,
+        stderr=__import__("subprocess").DEVNULL,
+        close_fds=True,
+    )
+
+
+def create_appimage_swap_script(appimage_path, downloaded_path, process_id):
+    """Create a small detached helper that replaces an AppImage after exit.
+
+    An AppImage cannot replace itself while it is running.  The downloaded file
+    is deliberately kept next to the current AppImage, so the final move is
+    atomic on normal local filesystems.  A previous verified version is kept as
+    ``.previous`` for recovery instead of being deleted by the updater.
+    """
+    appimage = Path(appimage_path).resolve()
+    downloaded = Path(downloaded_path).resolve()
+    if appimage.suffix.lower() != ".appimage":
+        raise ValueError("The current application is not an AppImage.")
+    if not appimage.is_file() or not downloaded.is_file():
+        raise ValueError("The AppImage update files are not available.")
+    if appimage.parent != downloaded.parent:
+        raise ValueError("The staged AppImage must be beside the current AppImage.")
+
+    script_path = appimage.parent / f".{appimage.name}.update.sh"
+    backup = appimage.with_name(appimage.name + ".previous")
+    app_q = shlex.quote(str(appimage))
+    download_q = shlex.quote(str(downloaded))
+    backup_q = shlex.quote(str(backup))
+    script_q = shlex.quote(str(script_path))
+    content = (
+        "#!/usr/bin/env bash\nset -eu\n"
+        f"while kill -0 {int(process_id)} 2>/dev/null; do sleep 0.2; done\n"
+        # Keep one known-good version.  The running AppImage is the recovery
+        # point for this verified update, even if an older backup exists.
+        f"rm -f -- {backup_q}\n"
+        f"if ! mv -- {app_q} {backup_q}; then exit 1; fi\n"
+        f"if ! mv -- {download_q} {app_q}; then\n"
+        f"  mv -- {backup_q} {app_q}\n"
+        "  exit 1\n"
+        "fi\n"
+        f"chmod +x -- {app_q}\n"
+        f"nohup {app_q} >/dev/null 2>&1 &\n"
+        f"rm -f -- {script_q}\n"
+    )
+    script_path.write_text(content, encoding="utf-8")
+    os.chmod(script_path, 0o755)
+    return script_path
 
 
 def human_size(size_bytes):

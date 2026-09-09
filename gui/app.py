@@ -1,4 +1,5 @@
 import argparse
+import os
 import shutil
 import subprocess
 import sys
@@ -50,6 +51,11 @@ GUI_TEXT = {
         "appearance": "Appearance", "output": "Output folder", "choose": "Choose",
         "engine": "Interpolation engine", "engine_hint": "Check FFmpeg, RIFE and the model",
         "check": "Check", "reset": "Reset all LocallyFPS", "cancel": "Cancel",
+        "updates": "Updates", "updates_hint": "Check for a verified update", "check_updates": "Check now",
+        "checking_updates": "Checking GitHub…", "up_to_date": "You're up to date", "update_available": "Update available",
+        "download_install": "Download and restart", "download_update": "Downloading update…",
+        "update_ready": "Restarting with the update…", "manual_update": "Download from GitHub",
+        "update_manual_detail": "This installation needs a manual update.", "close": "Close",
         "save": "Save changes", "continue": "Continue", "prepare": "Prepare LocallyFPS",
         "setup_title": "Initial setup", "setup_language": "Choose the application language.",
         "setup_engine": "Required components", "setup_engine_hint": "FFmpeg, RIFE and the model will be checked before continuing.",
@@ -89,6 +95,11 @@ GUI_TEXT = {
         "appearance": "Apariencia", "output": "Carpeta de salida", "choose": "Elegir",
         "engine": "Motor de interpolación", "engine_hint": "Comprobar FFmpeg, RIFE y el modelo",
         "check": "Comprobar", "reset": "Restablecer todo LocallyFPS", "cancel": "Cancelar",
+        "updates": "Actualizaciones", "updates_hint": "Buscar una actualización verificada", "check_updates": "Buscar ahora",
+        "checking_updates": "Consultando GitHub…", "up_to_date": "Ya tienes la versión más reciente", "update_available": "Hay una actualización disponible",
+        "download_install": "Descargar y reiniciar", "download_update": "Descargando actualización…",
+        "update_ready": "Reiniciando con la actualización…", "manual_update": "Descargar desde GitHub",
+        "update_manual_detail": "Esta instalación requiere una actualización manual.", "close": "Cerrar",
         "save": "Guardar cambios", "continue": "Continuar", "prepare": "Preparar LocallyFPS",
         "setup_title": "Configuración inicial", "setup_language": "Selecciona el idioma de la aplicación.",
         "setup_engine": "Componentes necesarios", "setup_engine_hint": "Se comprobarán FFmpeg, RIFE y el modelo antes de continuar.",
@@ -248,6 +259,35 @@ class SetupWorker(QObject):
             self.finished.emit(False, str(exc))
 
 
+class UpdateWorker(QObject):
+    """Run GitHub requests away from the GUI thread."""
+
+    checked = Signal(object, str)
+    progress = Signal(int)
+    staged = Signal(str, str)
+
+    @Slot()
+    def check(self):
+        try:
+            from core.updater import check_for_updates_detailed
+            self.checked.emit(check_for_updates_detailed(), "")
+        except Exception as exc:
+            self.checked.emit(None, str(exc))
+
+    @Slot(object)
+    def download(self, update):
+        try:
+            from core.updater import stage_appimage_update
+
+            def report(value):
+                self.progress.emit(round(max(0.0, min(1.0, value)) * 100))
+
+            script = stage_appimage_update(update, report)
+            self.staged.emit(str(script), "")
+        except Exception as exc:
+            self.staged.emit("", str(exc))
+
+
 class InAppModalOverlay(QWidget):
     """A blurred, animated modal layer that stays inside the application window."""
 
@@ -334,6 +374,7 @@ class InAppModalOverlay(QWidget):
 class SettingsDialog(QDialog):
     repair_requested = Signal()
     maintenance_requested = Signal(str)
+    update_requested = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -343,8 +384,8 @@ class SettingsDialog(QDialog):
         # the user explicitly saves them.
         self._original_language = config.CONFIG.get("language", "en")
         self._original_theme = config.CONFIG.get("theme", "dark")
-        self.setMinimumSize(720, 600)
-        self.setMaximumHeight(680)
+        self.setMinimumSize(720, 660)
+        self.setMaximumHeight(760)
         self.setObjectName("settingsDialog")
         root = QVBoxLayout(self)
         root.setContentsMargins(34, 28, 34, 28)
@@ -422,6 +463,24 @@ class SettingsDialog(QDialog):
         self.repair.clicked.connect(self._repair)
         engine_layout.addWidget(self.repair)
         root.addWidget(engine)
+
+        updates = QFrame()
+        updates.setObjectName("settingsSection")
+        updates_layout = QHBoxLayout(updates)
+        updates_layout.setContentsMargins(24, 15, 24, 15)
+        updates_text = QVBoxLayout()
+        self.updates_title = QLabel()
+        self.updates_hint = QLabel()
+        self.updates_hint.setObjectName("muted")
+        updates_text.addWidget(self.updates_title)
+        updates_text.addWidget(self.updates_hint)
+        updates_layout.addLayout(updates_text)
+        updates_layout.addStretch()
+        self.check_updates = QPushButton()
+        self.check_updates.setObjectName("ghostButton")
+        self.check_updates.clicked.connect(self._check_updates)
+        updates_layout.addWidget(self.check_updates)
+        root.addWidget(updates)
         self.maintenance = QPushButton()
         self.maintenance.setObjectName("ghostButton")
         self.maintenance.clicked.connect(self._request_reset)
@@ -481,6 +540,9 @@ class SettingsDialog(QDialog):
         self.engine_title.setText(tr("engine"))
         self.engine_hint.setText(tr("engine_hint"))
         self.repair.setText(tr("check"))
+        self.updates_title.setText(tr("updates"))
+        self.updates_hint.setText(tr("updates_hint"))
+        self.check_updates.setText(tr("check_updates"))
         self.maintenance.setText(tr("reset"))
         self.cancel_button.setText(tr("cancel"))
         self.save_button.setText(tr("save"))
@@ -523,6 +585,10 @@ class SettingsDialog(QDialog):
         self.reject()
         self.repair_requested.emit()
 
+    def _check_updates(self):
+        self.reject()
+        self.update_requested.emit()
+
     def _save(self):
         value = self.custom_fps.value() if self.default_fps.currentData() == "custom" else int(self.default_fps.currentData())
         config.CONFIG["default_target_fps"] = format_fps(value)
@@ -562,6 +628,91 @@ class ResetConfirmationDialog(QDialog):
         actions.addWidget(cancel)
         actions.addWidget(confirm)
         layout.addLayout(actions)
+
+
+class UpdateDialog(QDialog):
+    """A compact in-app update surface; it never installs without a click."""
+
+    download_requested = Signal(object)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowFlags(Qt.WindowType.Widget)
+        self.setObjectName("confirmationDialog")
+        self.setMinimumWidth(450)
+        self._update = None
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(34, 30, 34, 30)
+        layout.setSpacing(14)
+        self.title = QLabel(tr("updates"))
+        self.title.setObjectName("headline")
+        self.detail = QLabel(tr("checking_updates"))
+        self.detail.setObjectName("subtitle")
+        self.detail.setWordWrap(True)
+        self.progress = QProgressBar()
+        self.progress.setRange(0, 0)
+        self.progress.setTextVisible(False)
+        self.progress.setVisible(True)
+        self.action = QPushButton()
+        self.action.setObjectName("primaryButton")
+        self.action.setVisible(False)
+        self.action.clicked.connect(self._action)
+        self.close_button = QPushButton(tr("close"))
+        self.close_button.setObjectName("ghostButton")
+        self.close_button.clicked.connect(self.reject)
+        actions = QHBoxLayout()
+        actions.addStretch()
+        actions.addWidget(self.close_button)
+        actions.addWidget(self.action)
+        layout.addWidget(self.title)
+        layout.addWidget(self.detail)
+        layout.addWidget(self.progress)
+        layout.addLayout(actions)
+
+    def show_result(self, update, error):
+        self.progress.setVisible(False)
+        if error:
+            self.title.setText(tr("updates"))
+            self.detail.setText(error)
+            return
+        if update is None:
+            self.title.setText(tr("up_to_date"))
+            self.detail.setText(f"LocallyFPS v{paths.APP_VERSION}")
+            return
+        self._update = update
+        size = update.get("size", 0)
+        suffix = f" · {size / (1024 * 1024):.1f} MB" if size else ""
+        self.title.setText(tr("update_available"))
+        self.detail.setText(f"LocallyFPS {update['version']}{suffix}")
+        self.action.setText(tr("download_install") if update.get("installable") else tr("manual_update"))
+        self.action.setVisible(True)
+
+    def _action(self):
+        if not self._update:
+            return
+        if self._update.get("installable"):
+            self.action.setEnabled(False)
+            self.close_button.setEnabled(False)
+            self.detail.setText(tr("download_update"))
+            self.progress.setRange(0, 100)
+            self.progress.setValue(0)
+            self.progress.setVisible(True)
+            self.download_requested.emit(self._update)
+        else:
+            QDesktopServices.openUrl(QUrl(self._update["manual_url"]))
+
+    def set_progress(self, value):
+        self.progress.setValue(value)
+
+    def show_staged(self, error):
+        self.progress.setVisible(False)
+        self.close_button.setEnabled(True)
+        if error:
+            self.detail.setText(error)
+            self.action.setEnabled(True)
+            return
+        self.title.setText(tr("update_ready"))
+        self.detail.setText("")
 
 
 class MagicCanvas(QWidget):
@@ -1010,6 +1161,8 @@ class EnhanceWorker(QObject):
 
 
 class MainWindow(QMainWindow):
+    update_download_requested = Signal(object)
+
     def __init__(self):
         super().__init__()
         self.setWindowTitle(f"LocallyFPS · v{paths.APP_VERSION}")
@@ -1027,6 +1180,9 @@ class MainWindow(QMainWindow):
         self._processing_state = "idle"
         self.setup_worker = None
         self.setup_thread = None
+        self.update_worker = None
+        self.update_thread = None
+        self.update_dialog = None
         self._build_ui()
         self.modal_overlay = InAppModalOverlay(self)
         self.modal_overlay.set_blur_target(self.main_page)
@@ -1657,6 +1813,7 @@ class MainWindow(QMainWindow):
         dialog = SettingsDialog(self)
         dialog.repair_requested.connect(self._show_repair)
         dialog.maintenance_requested.connect(self._maintenance)
+        dialog.update_requested.connect(self._show_updates)
         dialog.accepted.connect(lambda: self._finish_settings(dialog, True))
         dialog.rejected.connect(lambda: self._finish_settings(dialog, False))
         self.modal_overlay.present(dialog)
@@ -1680,6 +1837,64 @@ class MainWindow(QMainWindow):
         self.setup_subtitle.setText(tr("checking_hint"))
         self.setup_progress.setValue(0)
         self.setup_button.setText(tr("check_now"))
+
+    def _show_updates(self):
+        """Check GitHub from a focused, in-app update dialog."""
+        if self.update_thread and self.update_thread.isRunning():
+            return
+        self.modal_overlay.dismiss(animated=False)
+        dialog = UpdateDialog(self)
+        dialog.rejected.connect(self.modal_overlay.dismiss)
+        dialog.download_requested.connect(self._download_update)
+        self.update_dialog = dialog
+        self.modal_overlay.present(dialog)
+        self.update_thread = QThread(self)
+        self.update_worker = UpdateWorker()
+        self.update_worker.moveToThread(self.update_thread)
+        self.update_thread.started.connect(self.update_worker.check)
+        self.update_worker.checked.connect(self._on_update_checked)
+        self.update_worker.progress.connect(dialog.set_progress)
+        self.update_worker.staged.connect(self._on_update_staged)
+        self.update_download_requested.connect(self.update_worker.download)
+        self.update_thread.finished.connect(self.update_worker.deleteLater)
+        self.update_thread.finished.connect(self.update_thread.deleteLater)
+        self.update_thread.start()
+
+    def _finish_update_worker(self):
+        if self.update_thread and self.update_thread.isRunning():
+            self.update_thread.quit()
+        self.update_worker = None
+        self.update_thread = None
+
+    @Slot(object, str)
+    def _on_update_checked(self, update, error):
+        if self.update_dialog:
+            self.update_dialog.show_result(update, error)
+        # Only retain the worker if this running AppImage can install after a
+        # second explicit user click.
+        if error or not update or not update.get("installable"):
+            self._finish_update_worker()
+
+    def _download_update(self, update):
+        if not self.update_worker or not self.update_thread or not self.update_thread.isRunning():
+            return
+        self.update_download_requested.emit(update)
+
+    @Slot(str, str)
+    def _on_update_staged(self, script_path, error):
+        if not self.update_dialog:
+            return
+        self.update_dialog.show_staged(error)
+        self._finish_update_worker()
+        if error:
+            return
+        try:
+            from core.update_utils import launch_swap
+            launch_swap(Path(script_path))
+        except Exception as exc:
+            self.update_dialog.show_staged(str(exc))
+            return
+        QTimer.singleShot(350, QApplication.instance().quit)
 
     def _maintenance(self, action):
         if self.thread and self.thread.isRunning():

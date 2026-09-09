@@ -44,8 +44,8 @@ from core.reassemble import (
     _validate_output,
     reassemble_video,
 )
-from core.update_utils import create_swap_script, parse_version, version_key
-from core.updater import UpdateCheckError, check_for_updates, run_updater
+from core.update_utils import create_appimage_swap_script, create_swap_script, parse_version, version_key
+from core.updater import UpdateCheckError, check_for_updates, check_for_updates_detailed, run_updater
 from core.wizard import _valid_cli_target_fps
 
 
@@ -478,6 +478,47 @@ class UpdateCheckTests(unittest.TestCase):
         urlopen.return_value = response
         self.assertIsNone(check_for_updates())
 
+    @mock.patch("core.updater._current_appimage", return_value=None)
+    @mock.patch("core.updater.get_platform_name", return_value="linux")
+    @mock.patch("core.updater.CURRENT_VERSION", "3.1.0")
+    @mock.patch("core.updater.urllib.request.urlopen")
+    def test_detailed_update_reports_archive_as_manual_when_not_appimage(self, urlopen, _platform, _appimage):
+        response = mock.MagicMock()
+        response.__enter__.return_value.read.return_value = json.dumps({
+            "tag_name": "v3.2.0", "html_url": "https://example.invalid/release",
+            "assets": [
+                {"name": "LocallyFPS_Linux_v3.2.0.zip", "browser_download_url": "https://example.invalid/linux.zip", "size": 42},
+                {"name": "SHA256SUMS.txt", "browser_download_url": "https://example.invalid/sums"},
+            ],
+        }).encode()
+        urlopen.return_value = response
+
+        update = check_for_updates_detailed()
+
+        self.assertFalse(update["installable"])
+        self.assertEqual(update["kind"], "archive")
+        self.assertEqual(update["version"], "v3.2.0")
+
+    @mock.patch("core.updater._current_appimage", return_value=Path("/tmp/LocallyFPS.AppImage"))
+    @mock.patch("core.updater.get_platform_name", return_value="linux")
+    @mock.patch("core.updater.CURRENT_VERSION", "3.1.0")
+    @mock.patch("core.updater.urllib.request.urlopen")
+    def test_detailed_update_prefers_appimage_for_running_appimage(self, urlopen, _platform, _appimage):
+        response = mock.MagicMock()
+        response.__enter__.return_value.read.return_value = json.dumps({
+            "tag_name": "v3.2.0",
+            "assets": [
+                {"name": "LocallyFPS-v3.2.0-x86_64.AppImage", "browser_download_url": "https://example.invalid/linux.AppImage"},
+                {"name": "SHA256SUMS.txt", "browser_download_url": "https://example.invalid/sums"},
+            ],
+        }).encode()
+        urlopen.return_value = response
+
+        update = check_for_updates_detailed()
+
+        self.assertTrue(update["installable"])
+        self.assertEqual(update["kind"], "appimage")
+
     @mock.patch("core.update_utils.sys.platform", "linux")
     def test_posix_update_swap_keeps_backup_and_has_rollback(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -487,6 +528,20 @@ class UpdateCheckTests(unittest.TestCase):
             self.assertIn("if ! mv --", content)
             self.assertIn("Locally FPS.old", content)
             self.assertIn("mv -- 'Locally FPS.old' 'Locally FPS'", content)
+
+    def test_appimage_swap_waits_for_exit_and_keeps_recovery_copy(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            appimage = root / "LocallyFPS.AppImage"
+            staged = root / ".LocallyFPS.AppImage.download"
+            appimage.write_bytes(b"old")
+            staged.write_bytes(b"new")
+            script = create_appimage_swap_script(appimage, staged, 1234)
+            content = script.read_text()
+            self.assertIn("while kill -0 1234", content)
+            self.assertIn("LocallyFPS.AppImage.previous", content)
+            self.assertIn("mv --", content)
+            self.assertNotIn("rm -rf", content)
 
 
 class InterpolationValidationTests(unittest.TestCase):
