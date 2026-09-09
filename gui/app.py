@@ -1258,7 +1258,7 @@ class MainWindow(QMainWindow):
             self.setup_button.setText(f"{tr('continue')}  →")
             self.setup_component.setText(tr("setup_check_ready"))
         elif self.setup_progress.value() == 100:
-            self._set_setup_feedback_visible(True)
+            self._set_setup_feedback_visible(False)
             self.setup_title.setText(tr("ready"))
             self.setup_subtitle.setText(tr("ready_hint"))
             self.setup_component.setText(f"✓  {tr('components_verified')}")
@@ -1311,8 +1311,8 @@ class MainWindow(QMainWindow):
     @Slot(bool, str)
     def _on_setup_finished(self, ok, error):
         self.setup_button.setEnabled(True)
-        self._set_setup_feedback_visible(True)
         if ok:
+            self._set_setup_feedback_visible(False)
             config.CONFIG["onboarding_complete"] = True
             config.save_config()
             self.setup_progress.setValue(100)
@@ -1322,6 +1322,7 @@ class MainWindow(QMainWindow):
             self.setup_detail.setText("FFmpeg · RIFE")
             self.setup_button.setText(tr("start"))
         else:
+            self._set_setup_feedback_visible(True)
             self.setup_title.setText(tr("setup_failed"))
             self.setup_component.setText(tr("setup_failed"))
             self.setup_detail.setText(error)
