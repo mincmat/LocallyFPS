@@ -384,8 +384,11 @@ class SettingsDialog(QDialog):
         # the user explicitly saves them.
         self._original_language = config.CONFIG.get("language", "en")
         self._original_theme = config.CONFIG.get("theme", "dark")
-        self.setMinimumSize(720, 660)
-        self.setMaximumHeight(760)
+        # Three two-line preference rows need their full text height.  Qt's
+        # compact size hint can otherwise squeeze the labels below their font
+        # metrics when the dialog is first opened.
+        self.setMinimumSize(720, 710)
+        self.setMaximumHeight(780)
         self.setObjectName("settingsDialog")
         root = QVBoxLayout(self)
         root.setContentsMargins(34, 28, 34, 28)
@@ -507,10 +510,14 @@ class SettingsDialog(QDialog):
 
     def _row_combo(self, layout, values, selected):
         row = QHBoxLayout()
+        row.setSpacing(18)
         labels = QVBoxLayout()
+        labels.setSpacing(2)
         title = QLabel()
+        title.setMinimumHeight(18)
         hint = QLabel()
         hint.setObjectName("muted")
+        hint.setMinimumHeight(16)
         labels.addWidget(title)
         labels.addWidget(hint)
         row.addLayout(labels)
@@ -519,7 +526,7 @@ class SettingsDialog(QDialog):
         for name, value in values:
             combo.addItem(name, value)
         combo.setCurrentIndex(max(0, combo.findData(selected)))
-        combo.setMinimumWidth(230)
+        combo.setMinimumSize(230, 44)
         configure_combo_popup(combo)
         row.addWidget(combo)
         layout.addLayout(row)
