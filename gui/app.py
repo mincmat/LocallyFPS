@@ -16,7 +16,7 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import (
     QApplication, QComboBox, QFileDialog, QFrame, QHBoxLayout, QLabel,
-    QListWidget, QListWidgetItem, QMainWindow, QMessageBox, QPushButton,
+    QListWidget, QListWidgetItem, QMainWindow, QPushButton,
     QScrollArea, QSizePolicy, QStackedWidget, QVBoxLayout, QWidget, QLineEdit,
     QProgressBar, QDialog, QDoubleSpinBox, QGraphicsBlurEffect, QGraphicsOpacityEffect,
     QGraphicsPixmapItem, QGraphicsScene,
@@ -32,11 +32,9 @@ SUPPORTED_EXTENSIONS = {
     ".mpg", ".mpeg", ".ts", ".mts", ".m2ts", ".ogv", ".3gp", ".vob",
 }
 
-LANGUAGES = [
-    ("Español", "es"), ("English", "en"), ("Português", "pt"),
-    ("Français", "fr"), ("Deutsch", "de"), ("中文", "zh"),
-    ("日本語", "ja"), ("한국어", "ko"), ("Русский", "ru"), ("العربية", "ar"),
-]
+# Only expose languages whose complete graphical interface is maintained.
+# The legacy CLI still retains its additional translation files.
+LANGUAGES = [("English", "en"), ("Español", "es")]
 
 GUI_TEXT = {
     "en": {
@@ -56,6 +54,16 @@ GUI_TEXT = {
         "download_install": "Download and restart", "download_update": "Downloading update…",
         "update_ready": "Restarting with the update…", "manual_update": "Download from GitHub",
         "update_manual_detail": "This installation needs a manual update.", "close": "Close",
+        "ok": "OK", "partial_result": "{completed} completed · {failed} failed",
+        "checking_ffmpeg": "Checking FFmpeg…", "ffmpeg_failed": "Could not install FFmpeg",
+        "ai_engine": "AI engine", "preparing_ai": "Preparing the AI engine…",
+        "ai_failed": "Could not install the AI engine", "checking_model": "Checking the model…",
+        "model_failed": "Could not prepare the RIFE model", "all_ready": "Everything is ready",
+        "preparing_engine": "Preparing the engine…", "preparing_components": "Preparing components…",
+        "first_run": "First run only", "reading_video": "Reading the video…",
+        "unrecognized_video": "Unrecognized video format", "interpolation_failed": "Interpolation could not be completed",
+        "components_ready_short": "Components ready", "check_connection": "Check your connection",
+        "unknown_download_error": "Unknown download error", "format_unrecognized_short": "Format not recognized",
         "save": "Save changes", "continue": "Continue", "prepare": "Prepare LocallyFPS",
         "setup_title": "Initial setup", "setup_language": "Choose the application language.",
         "setup_engine": "Required components", "setup_engine_hint": "FFmpeg, RIFE and the model will be checked before continuing.",
@@ -100,6 +108,16 @@ GUI_TEXT = {
         "download_install": "Descargar y reiniciar", "download_update": "Descargando actualización…",
         "update_ready": "Reiniciando con la actualización…", "manual_update": "Descargar desde GitHub",
         "update_manual_detail": "Esta instalación requiere una actualización manual.", "close": "Cerrar",
+        "ok": "Aceptar", "partial_result": "{completed} completados · {failed} con error",
+        "checking_ffmpeg": "Comprobando FFmpeg…", "ffmpeg_failed": "No se pudo instalar FFmpeg",
+        "ai_engine": "Motor de IA", "preparing_ai": "Preparando el motor de IA…",
+        "ai_failed": "No se pudo instalar el motor de IA", "checking_model": "Comprobando el modelo…",
+        "model_failed": "No se pudo preparar el modelo RIFE", "all_ready": "Todo está listo",
+        "preparing_engine": "Preparando el motor…", "preparing_components": "Preparando componentes…",
+        "first_run": "Solo la primera vez", "reading_video": "Leyendo el video…",
+        "unrecognized_video": "Formato de video no reconocido", "interpolation_failed": "La interpolación no pudo completarse",
+        "components_ready_short": "Componentes listos", "check_connection": "Comprueba tu conexión",
+        "unknown_download_error": "Error de descarga desconocido", "format_unrecognized_short": "Formato no reconocido",
         "save": "Guardar cambios", "continue": "Continuar", "prepare": "Preparar LocallyFPS",
         "setup_title": "Configuración inicial", "setup_language": "Selecciona el idioma de la aplicación.",
         "setup_engine": "Componentes necesarios", "setup_engine_hint": "Se comprobarán FFmpeg, RIFE y el modelo antes de continuar.",
@@ -242,18 +260,18 @@ class SetupWorker(QObject):
                     inner_self.owner.progress.emit(inner_self.start, str(label), inner_self.component)
 
             ffmpeg = Bar(self, 3, 22, "FFmpeg")
-            self.progress.emit(2, "Comprobando FFmpeg…", "FFmpeg")
+            self.progress.emit(2, tr("checking_ffmpeg"), "FFmpeg")
             if not ensure_ffmpeg(auto_yes=True, bar=ffmpeg):
-                raise RuntimeError(ffmpeg.error or "No se pudo instalar FFmpeg")
-            rife = Bar(self, 25, 65, "Motor de IA")
-            self.progress.emit(25, "Preparando el motor de IA…", "Motor de IA")
+                raise RuntimeError(ffmpeg.error or tr("ffmpeg_failed"))
+            rife = Bar(self, 25, 65, tr("ai_engine"))
+            self.progress.emit(25, tr("preparing_ai"), tr("ai_engine"))
             if not ensure_rife(auto_yes=True, bar=rife):
-                raise RuntimeError(rife.error or "No se pudo instalar el motor de IA")
-            self.progress.emit(92, "Comprobando el modelo…", "Modelo RIFE")
+                raise RuntimeError(rife.error or tr("ai_failed"))
+            self.progress.emit(92, tr("checking_model"), "RIFE")
             ensure_default_model(auto_yes=True)
             if not (paths.MODELS_DIR / "rife-v4.6").is_dir():
-                raise RuntimeError("No se pudo preparar el modelo RIFE")
-            self.progress.emit(100, "Todo está listo", "Componentes verificados")
+                raise RuntimeError(tr("model_failed"))
+            self.progress.emit(100, tr("all_ready"), tr("components_verified"))
             self.finished.emit(True, "")
         except Exception as exc:
             self.finished.emit(False, str(exc))
@@ -662,6 +680,33 @@ class ResetConfirmationDialog(QDialog):
         confirm.clicked.connect(self.accept)
         actions.addWidget(cancel)
         actions.addWidget(confirm)
+        layout.addLayout(actions)
+
+
+class NoticeDialog(QDialog):
+    """Application-styled replacement for native system message boxes."""
+
+    def __init__(self, title, detail, parent=None):
+        super().__init__(parent)
+        self.setWindowFlags(Qt.WindowType.Widget)
+        self.setObjectName("confirmationDialog")
+        self.setMinimumWidth(420)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(34, 30, 34, 30)
+        layout.setSpacing(14)
+        heading = QLabel(str(title))
+        heading.setObjectName("headline")
+        message = QLabel(str(detail))
+        message.setObjectName("subtitle")
+        message.setWordWrap(True)
+        layout.addWidget(heading)
+        layout.addWidget(message)
+        actions = QHBoxLayout()
+        actions.addStretch()
+        close = QPushButton(tr("ok"))
+        close.setObjectName("primaryButton")
+        close.clicked.connect(self.accept)
+        actions.addWidget(close)
         layout.addLayout(actions)
 
 
@@ -1107,7 +1152,7 @@ class EnhanceWorker(QObject):
             load_config()
             load_translations()
             _setup_system_paths()
-            self.progress.emit(0.01, "Preparando el motor…", "")
+            self.progress.emit(0.01, tr("preparing_engine"), "")
 
             class DependencyProgress:
                 def __init__(inner_self, worker):
@@ -1119,20 +1164,20 @@ class EnhanceWorker(QObject):
                         raise OperationCancelled("Operation cancelled by the user")
                     value = 0.02 + max(0.0, min(1.0, float(fraction))) * 0.06
                     inner_self.worker.progress.emit(
-                        value, str(label or "Preparando componentes…"), "Solo la primera vez",
+                        value, str(label or tr("preparing_components")), tr("first_run"),
                     )
 
                 def ok(inner_self, label):
-                    inner_self.worker.progress.emit(0.08, str(label), "Componentes listos")
+                    inner_self.worker.progress.emit(0.08, str(label), tr("components_ready_short"))
 
                 def fail(inner_self, label):
                     inner_self.last_error = str(label)
-                    inner_self.worker.progress.emit(0.08, str(label), "Revisá tu conexión")
+                    inner_self.worker.progress.emit(0.08, str(label), tr("check_connection"))
 
             dependency_progress = DependencyProgress(self)
             if not ensure_ffmpeg(auto_yes=True, bar=dependency_progress):
-                detail = dependency_progress.last_error or "Error de descarga desconocido"
-                raise RuntimeError(f"No se pudo preparar FFmpeg: {detail}")
+                detail = dependency_progress.last_error or tr("unknown_download_error")
+                raise RuntimeError(f"{tr('ffmpeg_failed')}: {detail}")
             ensure_rife(auto_yes=True, bar=dependency_progress)
             ensure_default_model(auto_yes=True)
 
@@ -1144,11 +1189,11 @@ class EnhanceWorker(QObject):
                 if self._is_skipped(video):
                     continue
                 self.preview_ready.emit(None)
-                self.progress.emit(0.1 + 0.9 * index / total, "Leyendo el video…", video.name)
+                self.progress.emit(0.1 + 0.9 * index / total, tr("reading_video"), video.name)
                 info = probe_video_file(video)
                 if info is None:
-                    failed.append((str(video), "Formato de video no reconocido"))
-                    self.item_finished.emit(str(video), False, "Formato no reconocido")
+                    failed.append((str(video), tr("unrecognized_video")))
+                    self.item_finished.emit(str(video), False, tr("format_unrecognized_short"))
                     continue
                 preview = self._extract_preview(video, info.get("duration", 0))
                 if preview is not None:
@@ -1185,7 +1230,7 @@ class EnhanceWorker(QObject):
                     self.item_finished.emit(str(video), True, str(output))
                 else:
                     if not any(name == str(video) for name, _ in failed):
-                        failed.append((str(video), "La interpolación no pudo completarse"))
+                        failed.append((str(video), tr("interpolation_failed")))
                     self.item_finished.emit(str(video), False, failed[-1][1])
         except OperationCancelled:
             self.cancelled.emit(completed)
@@ -1200,6 +1245,10 @@ class MainWindow(QMainWindow):
 
     def __init__(self):
         super().__init__()
+        supported_gui_languages = {code for _name, code in LANGUAGES}
+        if config.CONFIG.get("language") not in supported_gui_languages:
+            config.CONFIG["language"] = "en"
+            config.save_config()
         self.setWindowTitle(f"LocallyFPS · v{paths.APP_VERSION}")
         self.setMinimumSize(980, 680)
         self.resize(1120, 760)
@@ -1455,7 +1504,7 @@ class MainWindow(QMainWindow):
         self.setup_progress.setValue(0)
         self.setup_progress.setTextVisible(False)
         dependency_layout.addWidget(self.setup_progress)
-        self.setup_detail = QLabel("FFmpeg · Motor de IA · Modelo RIFE")
+        self.setup_detail = QLabel("FFmpeg · RIFE")
         self.setup_detail.setObjectName("muted")
         self.setup_detail.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.setup_detail.setWordWrap(True)
@@ -1780,13 +1829,15 @@ class MainWindow(QMainWindow):
             self.open_button.setVisible(True)
         elif completed:
             self.status_title.setText(tr("warnings"))
-            self.status_detail.setText(f"{len(completed)} completados · {len(failed)} con error")
+            self.status_detail.setText(tr("partial_result").format(
+                completed=len(completed), failed=len(failed),
+            ))
             self.open_button.setVisible(True)
         else:
             self.status_title.setText(tr("failed"))
             message = failed[-1][1] if failed else tr("unknown_error")
             self.status_detail.setText(message)
-            QMessageBox.warning(self, "LocallyFPS", message)
+            self._show_notice(tr("failed"), message)
         self.worker = None
         self.thread = None
 
@@ -1933,7 +1984,7 @@ class MainWindow(QMainWindow):
 
     def _maintenance(self, action):
         if self.thread and self.thread.isRunning():
-            QMessageBox.information(self, tr("working_close"), tr("working_close_detail"))
+            self._show_notice(tr("working_close"), tr("working_close_detail"))
             return
         if action != "settings":
             return
@@ -1941,6 +1992,13 @@ class MainWindow(QMainWindow):
         confirm.accepted.connect(self._reset_settings)
         confirm.rejected.connect(self.modal_overlay.dismiss)
         self.modal_overlay.present(confirm)
+
+    def _show_notice(self, title, detail):
+        self.modal_overlay.dismiss(animated=False)
+        notice = NoticeDialog(title, detail, self)
+        notice.accepted.connect(self.modal_overlay.dismiss)
+        notice.rejected.connect(self.modal_overlay.dismiss)
+        self.modal_overlay.present(notice)
 
     def _reset_settings(self):
         config.CONFIG.clear()
@@ -1959,7 +2017,7 @@ class MainWindow(QMainWindow):
         self.setup_steps.setText("1  ●────────○  2")
         self.setup_progress.setValue(0)
         self.setup_button.setEnabled(True)
-        self.setup_detail.setText("FFmpeg · Motor de IA · Modelo RIFE")
+        self.setup_detail.setText("FFmpeg · RIFE")
         language_index = self.language_combo.findData(config.CONFIG["language"])
         self.language_combo.setCurrentIndex(max(0, language_index))
         self._apply_onboarding_language()
@@ -2003,9 +2061,8 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event):
         if ((self.thread and self.thread.isRunning()) or
                 (self.setup_thread and self.setup_thread.isRunning())):
-            QMessageBox.information(
-                self, tr("working_close"), tr("working_close_detail"),
-            )
+            if not self.modal_overlay.isVisible():
+                self._show_notice(tr("working_close"), tr("working_close_detail"))
             event.ignore()
             return
         event.accept()
@@ -2039,7 +2096,7 @@ def style_for_theme(theme):
         }
     return """
 QWidget { font-family: Inter, "Segoe UI", sans-serif; font-size: 14px; color: %(text)s; }
-QWidget#root, QStackedWidget#root, QDialog, QMessageBox { background: %(root)s; color: %(text)s; }
+QWidget#root, QStackedWidget#root, QDialog { background: %(root)s; color: %(text)s; }
 QWidget#inAppOverlay { background: rgba(0, 0, 0, 150); }
 QWidget#settingsBody, QScrollArea#settingsScroll, QScrollArea#settingsScroll > QWidget > QWidget { background: transparent; border: 0; }
 QScrollBar:vertical { background: transparent; width: 7px; margin: 2px 0; }
@@ -2048,7 +2105,7 @@ QScrollBar::handle:vertical:hover { background: %(muted)s; }
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; background: transparent; }
 QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: transparent; }
 QFrame#modalSurface { background: %(root)s; border: 1px solid %(border)s; border-radius: 24px; }
-QDialog#settingsDialog { background: transparent; border: 0; }
+QDialog#settingsDialog, QDialog#confirmationDialog { background: transparent; border: 0; }
 QLabel { color: %(text)s; background: transparent; }
 QLabel#brand { font-size: 27px; font-weight: 800; }
 QLabel#beta { color: %(text)s; background: %(hover)s; border: 1px solid %(border)s; border-radius: 10px; padding: 4px 9px; font-size: 10px; font-weight: 700; }
@@ -2103,9 +2160,6 @@ QLabel#videoName { color: %(text)s; font-size: 13px; font-weight: 650; }
 QLabel#videoFps { color: %(muted)s; font-size: 11px; }
 QPushButton#videoRemoveButton { color: %(muted)s; background: transparent; border: 0; border-radius: 15px; font-size: 20px; font-weight: 400; padding: 0; }
 QPushButton#videoRemoveButton:hover { color: %(text)s; background: %(hover)s; }
-QMessageBox QPushButton { color: %(text)s; background: %(field)s; border: 1px solid %(border)s; min-width: 74px; }
-QMessageBox QPushButton:hover { background: %(hover)s; border-color: %(text)s; }
-QMessageBox QLabel#qt_msgboxex_icon_label { min-width: 0; max-width: 0; qproperty-pixmap: none; }
 QToolTip { color: %(text)s; background: %(card)s; border: 1px solid %(border)s; padding: 5px; }
 QScrollBar:vertical { background: transparent; width: 7px; }
 QScrollBar::handle:vertical { background: %(border)s; border-radius: 3px; min-height: 22px; }
