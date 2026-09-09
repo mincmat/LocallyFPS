@@ -1246,6 +1246,11 @@ class MainWindow(QMainWindow):
         config.save_config()
         self.apply_language()
 
+    def _set_setup_feedback_visible(self, visible):
+        self.setup_component.setVisible(visible)
+        self.setup_progress.setVisible(visible)
+        self.setup_detail.setVisible(visible)
+
     def _apply_onboarding_language(self):
         if self.setup_content.currentIndex() == 0:
             self.setup_title.setText(tr("setup_title"))
@@ -1253,11 +1258,15 @@ class MainWindow(QMainWindow):
             self.setup_button.setText(f"{tr('continue')}  →")
             self.setup_component.setText(tr("setup_check_ready"))
         elif self.setup_progress.value() == 100:
+            self._set_setup_feedback_visible(True)
             self.setup_title.setText(tr("ready"))
             self.setup_subtitle.setText(tr("ready_hint"))
             self.setup_component.setText(f"✓  {tr('components_verified')}")
             self.setup_button.setText(tr("start"))
         else:
+            # Before the check starts, the title and short explanation already
+            # say what will happen.  Keep the detailed status for real work.
+            self._set_setup_feedback_visible(False)
             self.setup_title.setText(tr("setup_engine"))
             self.setup_subtitle.setText(tr("setup_engine_hint"))
             self.setup_button.setText(tr("prepare"))
@@ -1280,6 +1289,7 @@ class MainWindow(QMainWindow):
     def _run_setup(self):
         self.setup_button.setEnabled(False)
         self.setup_button.setText(tr("setup_preparing"))
+        self._set_setup_feedback_visible(True)
         self.setup_progress.setValue(1)
         self.setup_thread = QThread(self)
         self.setup_worker = SetupWorker()
@@ -1301,6 +1311,7 @@ class MainWindow(QMainWindow):
     @Slot(bool, str)
     def _on_setup_finished(self, ok, error):
         self.setup_button.setEnabled(True)
+        self._set_setup_feedback_visible(True)
         if ok:
             config.CONFIG["onboarding_complete"] = True
             config.save_config()
