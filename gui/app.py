@@ -10,8 +10,8 @@ from PySide6.QtCore import (
     QUrl, Signal, Slot,
 )
 from PySide6.QtGui import (
-    QColor, QDesktopServices, QFont, QIcon, QImage, QPainter, QPainterPath,
-    QPalette, QPen, QPixmap,
+    QColor, QDesktopServices, QFont, QIcon, QImage, QLinearGradient, QPainter,
+    QPainterPath, QPalette, QPen, QPixmap,
 )
 from PySide6.QtWidgets import (
     QApplication, QComboBox, QFileDialog, QFrame, QHBoxLayout, QLabel,
@@ -576,6 +576,10 @@ class MagicCanvas(QWidget):
         self._preview = None
         self._blurred_preview = None
         self._aspect_ratio = 16 / 9
+        self._shimmer_phase = 0.0
+        self._shimmer_timer = QTimer(self)
+        self._shimmer_timer.setInterval(24)
+        self._shimmer_timer.timeout.connect(self._advance_shimmer)
 
     def hasHeightForWidth(self):
         return True
@@ -598,6 +602,16 @@ class MagicCanvas(QWidget):
 
     def set_active(self, active):
         self._active = bool(active)
+        if self._active:
+            if not self._shimmer_timer.isActive():
+                self._shimmer_timer.start()
+        else:
+            self._shimmer_timer.stop()
+            self._shimmer_phase = 0.0
+        self.update()
+
+    def _advance_shimmer(self):
+        self._shimmer_phase = (self._shimmer_phase + 0.012) % 1.0
         self.update()
 
     @Slot(object)
@@ -662,13 +676,27 @@ class MagicCanvas(QWidget):
                 blurred,
             )
             painter.fillRect(frame, QColor(0, 0, 0, 92))
+            if self._active:
+                # A restrained Apple-like light sweep: it never changes the
+                # thumbnail geometry and passes over it at a calm, constant rate.
+                center = -0.38 + self._shimmer_phase * 1.76
+                gradient = QLinearGradient(
+                    frame.left() + frame.width() * (center - 0.24), 0,
+                    frame.left() + frame.width() * (center + 0.24), 0,
+                )
+                gradient.setColorAt(0.0, QColor(255, 255, 255, 0))
+                gradient.setColorAt(0.42, QColor(255, 255, 255, 0))
+                gradient.setColorAt(0.50, QColor(255, 255, 255, 34))
+                gradient.setColorAt(0.58, QColor(255, 255, 255, 0))
+                gradient.setColorAt(1.0, QColor(255, 255, 255, 0))
+                painter.fillRect(frame, gradient)
 
         percent_rect = frame
-        shadow = QColor(0, 0, 0, 175)
+        shadow = QColor(0, 0, 0, 105)
         font = QFont("Sans Serif", 31, QFont.Weight.DemiBold)
         painter.setFont(font)
         painter.setPen(shadow)
-        painter.drawText(percent_rect.translated(1, 2), Qt.AlignmentFlag.AlignCenter, f"{round(self._progress * 100)}%")
+        painter.drawText(percent_rect.translated(1, 1), Qt.AlignmentFlag.AlignCenter, f"{round(self._progress * 100)}%")
         painter.setPen(QColor("#ffffff"))
         painter.drawText(percent_rect, Qt.AlignmentFlag.AlignCenter, f"{round(self._progress * 100)}%")
         painter.setClipping(False)
