@@ -1728,9 +1728,17 @@ class MainWindow(QMainWindow):
         self.settings_button.setAccessibleName(tr("settings"))
         self._apply_onboarding_language()
         if self._processing_state == "stopped":
+            self.stop_button.setVisible(False)
+            self.start_button.setVisible(True)
             self.status_title.setText(tr("stopped"))
             self.status_detail.setText(tr("stopped_detail"))
         elif not (self.thread and self.thread.isRunning()):
+            # Language/theme previews can refresh this method after a worker
+            # has already ended. Never leave the stop action visible in that
+            # idle/queued state.
+            if self._processing_state not in {"running", "stopping"}:
+                self.stop_button.setVisible(False)
+                self.start_button.setVisible(True)
             if self.video_paths:
                 count = len(self.video_paths)
                 key = "queued_one" if count == 1 else "queued_many"
