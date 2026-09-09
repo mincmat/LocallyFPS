@@ -243,11 +243,13 @@ class InAppModalOverlay(QWidget):
             height,
         )
 
-    def _configure_animation(self, start_opacity, end_opacity, start_rect, end_rect, duration):
+    def _configure_animation(
+        self, start_opacity, end_opacity, start_rect, end_rect, duration, easing,
+    ):
         self._animation.stop()
         for animation in (self._fade_animation, self._scale_animation):
             animation.setDuration(duration)
-            animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+            animation.setEasingCurve(easing)
         self._fade_animation.setStartValue(start_opacity)
         self._fade_animation.setEndValue(end_opacity)
         self._scale_animation.setStartValue(start_rect)
@@ -270,20 +272,27 @@ class InAppModalOverlay(QWidget):
         widget.show()
         self._content_layout.activate()
         end_rect = self._surface.geometry()
-        start_rect = self._scaled_rect(end_rect, 0.97)
+        # Keep the movement visible without the modal feeling like it jumps.
+        # Opening decelerates into place; closing accelerates away from it.
+        start_rect = self._scaled_rect(end_rect, 0.90)
         self._surface.setGeometry(start_rect)
         self._opacity.setOpacity(0)
         self._closing = False
-        self._configure_animation(0, 1, start_rect, end_rect, 190)
+        self._configure_animation(
+            0, 1, start_rect, end_rect, 240, QEasingCurve.Type.OutCubic,
+        )
         self._animation.start()
 
     def dismiss(self, animated=True):
         self._animation.stop()
         if animated and self.isVisible() and self._content is not None:
             start_rect = self._surface.geometry()
-            end_rect = self._scaled_rect(start_rect, 0.97)
+            end_rect = self._scaled_rect(start_rect, 0.90)
             self._closing = True
-            self._configure_animation(self._opacity.opacity(), 0, start_rect, end_rect, 140)
+            self._configure_animation(
+                self._opacity.opacity(), 0, start_rect, end_rect, 180,
+                QEasingCurve.Type.InOutCubic,
+            )
             self._animation.start()
             return
         self._dispose()
