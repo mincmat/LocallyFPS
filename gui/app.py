@@ -155,10 +155,25 @@ class ThemedComboBox(QComboBox):
 
     def showPopup(self):
         self.hidePopup()
-        popup = QFrame(None, Qt.WindowType.Popup | Qt.WindowType.FramelessWindowHint)
-        popup.setObjectName("cleanComboPopup")
+        popup = QWidget(
+            None,
+            Qt.WindowType.Popup
+            | Qt.WindowType.FramelessWindowHint
+            | Qt.WindowType.NoDropShadowWindowHint,
+        )
+        popup.setObjectName("cleanComboPopupWindow")
         popup.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
-        layout = QVBoxLayout(popup)
+        # A top-level Qt popup otherwise paints its native rectangular window
+        # behind the rounded stylesheet background.  Keep that window fully
+        # transparent and paint the visible menu on an inner surface.
+        popup.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        popup.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground)
+        outer = QVBoxLayout(popup)
+        outer.setContentsMargins(0, 0, 0, 0)
+        surface = QFrame(popup)
+        surface.setObjectName("cleanComboPopup")
+        outer.addWidget(surface)
+        layout = QVBoxLayout(surface)
         layout.setContentsMargins(6, 6, 6, 6)
         layout.setSpacing(3)
         for index in range(self.count()):
