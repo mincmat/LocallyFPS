@@ -37,6 +37,7 @@ BIN_EXT = ""
 DEFAULT_LANGUAGE = "en"
 LAYOUT_MODE = "source"
 IS_FROZEN = False
+BUNDLED_RUNTIME = False
 
 
 @dataclass
@@ -170,7 +171,7 @@ def setup(base_dir, *, frozen=None, platform_name=None, env=None, home=None):
     global FFMPEG_BIN, FFPROBE_BIN, RIFE_BIN
     global MODELS_DIR, CACHE_DIR, CONFIG_DIR, VIDEOS_DIR, LOGS_DIR, DOWNLOADS_DIR
     global _FFMPEG_DIR, _RIFE_DIR, CONFIG_PATH, LANG_DIR
-    global OS_NAME, BIN_EXT, DEFAULT_LANGUAGE, LAYOUT_MODE, IS_FROZEN, _INSTANCE
+    global OS_NAME, BIN_EXT, DEFAULT_LANGUAGE, LAYOUT_MODE, IS_FROZEN, BUNDLED_RUNTIME, _INSTANCE
 
     _INSTANCE = None
     runtime_env = dict(os.environ) if env is None else dict(env)
@@ -225,12 +226,22 @@ def setup(base_dir, *, frozen=None, platform_name=None, env=None, home=None):
         )
         LAYOUT_MODE = "installed"
 
-    _FFMPEG_DIR = DATA_DIR / "deps" / "ffmpeg"
-    _RIFE_DIR = DATA_DIR / "deps" / "rife"
+    bundled_deps = RESOURCE_DIR / "deps"
+    bundled_models = RESOURCE_DIR / "models"
+    BUNDLED_RUNTIME = bool(
+        frozen
+        and (bundled_deps / "ffmpeg" / f"ffmpeg{BIN_EXT}").is_file()
+        and (bundled_deps / "ffmpeg" / f"ffprobe{BIN_EXT}").is_file()
+        and (bundled_deps / "rife" / f"rife-ncnn-vulkan{BIN_EXT}").is_file()
+        and (bundled_models / "rife-v4.6").is_dir()
+    )
+    runtime_root = RESOURCE_DIR if BUNDLED_RUNTIME else DATA_DIR
+    _FFMPEG_DIR = runtime_root / "deps" / "ffmpeg"
+    _RIFE_DIR = runtime_root / "deps" / "rife"
     FFMPEG_BIN = _FFMPEG_DIR / f"ffmpeg{BIN_EXT}"
     FFPROBE_BIN = _FFMPEG_DIR / f"ffprobe{BIN_EXT}"
     RIFE_BIN = _RIFE_DIR / f"rife-ncnn-vulkan{BIN_EXT}"
-    MODELS_DIR = DATA_DIR / "models"
+    MODELS_DIR = runtime_root / "models"
     LOGS_DIR = DATA_DIR / "logs"
     CONFIG_PATH = CONFIG_DIR / "settings.json"
     LANG_DIR = RESOURCE_DIR / "languages"

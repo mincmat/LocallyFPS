@@ -56,8 +56,8 @@ def get_platform_name():
     return None
 
 
-def get_platform_base_name():
-    plat = get_platform_name()
+def get_platform_base_name(platform_name=None):
+    plat = platform_name or get_platform_name()
     return ASSET_MAP.get(plat) if plat else None
 
 
@@ -81,6 +81,27 @@ def pick_asset(assets, base_name):
         return ()
 
     return max(matches, key=asset_version_key)
+
+
+def pick_platform_asset(assets, platform_name):
+    """Prefer the user-facing v4 package, retaining compatibility with v3 ZIPs."""
+    preferences = {
+        "linux": (r"^LocallyFPS-v.+-x86_64\.AppImage$",),
+        "windows": (
+            r"^LocallyFPS-v.+-windows-x64-setup\.exe$",
+            r"^LocallyFPS-v.+-windows-x64-portable\.zip$",
+        ),
+        "macos": (r"^LocallyFPS-v.+-macos-arm64\.dmg$",),
+    }.get(platform_name, ())
+    for pattern in preferences:
+        match = next(
+            (asset for asset in assets if re.match(pattern, asset.get("name", ""), re.IGNORECASE)),
+            None,
+        )
+        if match:
+            return match
+    base_name = ASSET_MAP.get(platform_name)
+    return pick_asset(assets, base_name) if base_name else None
 
 
 def create_swap_script(old_dir, new_dir):

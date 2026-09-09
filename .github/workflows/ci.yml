@@ -67,15 +67,3 @@ jobs:
           if [ "$RUNNER_OS" = "macOS" ]; then executable="dist/LocallyFPS.app/Contents/MacOS/LocallyFPS"; fi
           if [ "$RUNNER_OS" != "Windows" ]; then "$executable" --network-smoke-test; fi
           QT_QPA_PLATFORM=offscreen "$executable" --smoke-test
-      - name: Build and smoke-test AppImage
-        if: runner.os == 'Linux'
-        shell: bash
-        run: |
-          PYTHON=python packaging/build_appimage.sh
-          QT_QPA_PLATFORM=offscreen dist/*.AppImage --appimage-extract-and-run --smoke-test
-      - uses: actions/upload-artifact@v4
-        if: runner.os == 'Linux'
-        with:
-          name: LocallyFPS-v4-AppImage
-          path: dist/*.AppImage
-          if-no-files-found: error

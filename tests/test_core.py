@@ -398,6 +398,29 @@ class PathLayoutTests(unittest.TestCase):
             )
             self.assertEqual(paths.VIDEOS_DIR, root / "user" / "Movies" / "LocallyFPS")
 
+    def test_frozen_package_uses_bundled_runtime_without_writing_into_it(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp).resolve()
+            resources = root / "bundle"
+            for item in (
+                resources / "deps" / "ffmpeg" / "ffmpeg.exe",
+                resources / "deps" / "ffmpeg" / "ffprobe.exe",
+                resources / "deps" / "rife" / "rife-ncnn-vulkan.exe",
+                resources / "models" / "rife-v4.6" / "flownet.bin",
+            ):
+                item.parent.mkdir(parents=True, exist_ok=True)
+                item.write_bytes(b"bundled")
+            with mock.patch.object(paths.sys, "_MEIPASS", str(resources), create=True):
+                paths.setup(
+                    root / "installed", frozen=True, platform_name="windows",
+                    home=root / "user", env={"LOCALAPPDATA": str(root / "data")},
+                )
+            self.assertTrue(paths.BUNDLED_RUNTIME)
+            self.assertEqual(paths.FFMPEG_BIN, resources / "deps" / "ffmpeg" / "ffmpeg.exe")
+            self.assertEqual(paths.RIFE_BIN, resources / "deps" / "rife" / "rife-ncnn-vulkan.exe")
+            self.assertEqual(paths.MODELS_DIR, resources / "models")
+            self.assertEqual(paths.CONFIG_DIR, root / "data" / "LocallyFPS" / "config")
+
     def test_existing_v3_portable_data_is_reused_without_being_moved(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp).resolve()
@@ -433,6 +456,19 @@ class OutputPathTests(unittest.TestCase):
 
 
 class UpdateCheckTests(unittest.TestCase):
+    def test_v4_release_assets_are_selected_for_each_platform(self):
+        from core.update_utils import pick_platform_asset
+
+        assets = [
+            {"name": "LocallyFPS-v4.0.0-x86_64.AppImage"},
+            {"name": "LocallyFPS-v4.0.0-windows-x64-portable.zip"},
+            {"name": "LocallyFPS-v4.0.0-windows-x64-setup.exe"},
+            {"name": "LocallyFPS-v4.0.0-macos-arm64.dmg"},
+        ]
+        self.assertTrue(pick_platform_asset(assets, "linux")["name"].endswith(".AppImage"))
+        self.assertTrue(pick_platform_asset(assets, "windows")["name"].endswith("setup.exe"))
+        self.assertTrue(pick_platform_asset(assets, "macos")["name"].endswith("arm64.dmg"))
+
     @mock.patch("core.updater.check_for_updates")
     def test_installed_beta_never_runs_directory_swap_updater(self, check):
         old_frozen, old_layout = paths.IS_FROZEN, paths.LAYOUT_MODE
@@ -448,10 +484,10 @@ class UpdateCheckTests(unittest.TestCase):
         with self.assertRaises(UpdateCheckError):
             check_for_updates()
 
-    @mock.patch("core.updater.get_platform_base_name", return_value="LocallyFPS_Linux")
+    @mock.patch("core.updater.get_platform_name", return_value="linux")
     @mock.patch("core.updater.CURRENT_VERSION", "3.1")
     @mock.patch("core.updater.urllib.request.urlopen")
-    def test_short_current_version_detects_new_release(self, urlopen, _base_name):
+    def test_short_current_version_detects_new_release(self, urlopen, _platform_name):
         payload = {
             "tag_name": "v3.2.0",
             "assets": [{

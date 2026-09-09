@@ -1,6 +1,7 @@
-name: release
+name: release-candidate
 
 on:
+  workflow_dispatch:
   push:
     tags: ["v*"]
 
@@ -11,91 +12,200 @@ permissions:
 
 jobs:
   build:
+    name: ${{ matrix.label }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
-            platform: Linux
-            executable: LocallyFPS
-          - os: windows-latest
-            platform: Windows
-            executable: LocallyFPS.exe
+          - os: ubuntu-22.04
+            label: Linux x86_64 AppImage
+            platform_id: linux-x86_64
+          - os: windows-2022
+            label: Windows x64 setup and portable
+            platform_id: windows-x86_64
           - os: macos-latest
-            platform: macOS
-            executable: LocallyFPS
+            label: macOS Apple Silicon DMG
+            platform_id: macos-arm64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.10"
-      - name: Install FFmpeg (Linux)
-        if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg
-      - name: Install FFmpeg (macOS)
-        if: runner.os == 'macOS'
+          python-version: "3.11"
+
+      - name: Verify runner architecture
+        shell: bash
         run: |
-          brew install ffmpeg-full
-          echo "$(brew --prefix ffmpeg-full)/bin" >> "$GITHUB_PATH"
-      - name: Install FFmpeg (Windows)
-        if: runner.os == 'Windows'
-        run: choco install ffmpeg -y --no-progress
-      - name: Test
+          python - <<'PY'
+          import platform
+          import sys
+          expected = "arm64" if "macos-arm64" == "${{ matrix.platform_id }}" else "x86_64"
+          aliases = {"AMD64": "x86_64", "x86_64": "x86_64", "arm64": "arm64", "aarch64": "arm64"}
+          actual = aliases.get(platform.machine(), platform.machine())
+          print(f"Python {sys.version.split()[0]} on {actual}")
+          if actual != expected:
+              raise SystemExit(f"Expected {expected}, got {actual}")
+          PY
+
+      - name: Install build tools
+        run: python -m pip install --disable-pip-version-check -r requirements-gui.txt
+
+      - uses: actions/cache@v4
+        with:
+          path: build/download-cache
+          key: runtime-${{ matrix.platform_id }}-${{ hashFiles('packaging/runtime_manifest.json') }}
+
+      - name: Prepare verified offline runtime
+        run: >-
+          python packaging/prepare_runtime.py
+          --platform ${{ matrix.platform_id }}
+          --output build/runtime-${{ matrix.platform_id }}
+
+      - name: Run source tests
         run: |
           python -m compileall -q .
           python -m unittest discover -s tests -v
-      - name: Build portable executable
+
+      - name: Build Linux AppImage
+        if: runner.os == 'Linux'
+        shell: bash
+        env:
+          RUNTIME_DIR: ${{ github.workspace }}/build/runtime-linux-x86_64
+        run: PYTHON=python packaging/build_appimage.sh
+
+      - name: Build Windows and macOS application
+        if: runner.os != 'Linux'
+        run: >-
+          python packaging/build_gui.py
+          --runtime-dir build/runtime-${{ matrix.platform_id }}
+          --dist-dir dist
+          --work-dir build/frozen
+          --spec-dir build/spec
+
+      - name: Test Linux package and real interpolation
+        if: runner.os == 'Linux'
+        shell: bash
         run: |
-          python -m pip install --disable-pip-version-check pyinstaller
-          pyinstaller --clean --onefile --name LocallyFPS fps_enhancer.py
-      - name: Package (POSIX)
-        if: runner.os != 'Windows'
-        run: |
-          stage="package/LocallyFPS_${{ matrix.platform }}_${GITHUB_REF_NAME}"
-          mkdir -p "$stage"
-          cp "dist/${{ matrix.executable }}" "$stage/"
-          cp README.md CHANGELOG.md LICENSE "$stage/"
-          cp -R languages "$stage/"
-          chmod +x "$stage/${{ matrix.executable }}"
-          (cd package && zip -qr "LocallyFPS_${{ matrix.platform }}_${GITHUB_REF_NAME}.zip" "LocallyFPS_${{ matrix.platform }}_${GITHUB_REF_NAME}")
-      - name: Package (Windows)
+          image="dist/LocallyFPS-v$(python -c 'from core.paths import APP_VERSION; print(APP_VERSION)')-x86_64.AppImage"
+          "$image" --appimage-extract-and-run --dependency-smoke-test
+          "$image" --appimage-extract-and-run --pipeline-smoke-test
+          QT_QPA_PLATFORM=offscreen "$image" --appimage-extract-and-run --smoke-test
+
+      - name: Test Windows package and real interpolation
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $stage = "package/LocallyFPS_${{ matrix.platform }}_$env:GITHUB_REF_NAME"
-          New-Item -ItemType Directory -Force $stage | Out-Null
-          Copy-Item "dist/${{ matrix.executable }}", README.md, CHANGELOG.md, LICENSE $stage
-          Copy-Item -Recurse languages "$stage/languages"
-          Compress-Archive -Path $stage -DestinationPath "package/LocallyFPS_${{ matrix.platform }}_$env:GITHUB_REF_NAME.zip"
+          $exe = "dist/LocallyFPS/LocallyFPS.exe"
+          & $exe --dependency-smoke-test
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $exe --pipeline-smoke-test
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $env:QT_QPA_PLATFORM = "offscreen"
+          & $exe --smoke-test
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Test macOS package and real interpolation
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          exe="dist/LocallyFPS.app/Contents/MacOS/LocallyFPS"
+          "$exe" --dependency-smoke-test
+          "$exe" --pipeline-smoke-test
+          QT_QPA_PLATFORM=offscreen "$exe" --smoke-test
+          file "$exe" | grep -q arm64
+          find "dist/LocallyFPS.app" -name rife-ncnn-vulkan -exec file {} \; | grep -q arm64
+
+      - name: Package Windows installer and portable build
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $version = python -c "from core.paths import APP_VERSION; print(APP_VERSION)"
+          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress }
+          New-Item -ItemType Directory -Force "dist/release" | Out-Null
+          & $iscc "/DMyAppVersion=$version" "/DSourceDir=$pwd\dist\LocallyFPS" "/DOutputDir=$pwd\dist\release" "/DSetupIcon=$pwd\build\frozen\locallyfps.ico" "packaging\windows\LocallyFPS.iss"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Copy-Item -Recurse "dist/LocallyFPS" "dist/LocallyFPS-portable"
+          New-Item -ItemType File "dist/LocallyFPS-portable/.locallyfps-portable" | Out-Null
+          Compress-Archive -CompressionLevel Optimal -Path "dist/LocallyFPS-portable" -DestinationPath "dist/release/LocallyFPS-v$version-windows-x64-portable.zip"
+
+      - name: Sign and package macOS DMG
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          version="$(python -c 'from core.paths import APP_VERSION; print(APP_VERSION)')"
+          codesign --force --deep --sign - "dist/LocallyFPS.app"
+          codesign --verify --deep --strict --verbose=2 "dist/LocallyFPS.app"
+          mkdir -p "dist/dmg" "dist/release"
+          cp -R "dist/LocallyFPS.app" "dist/dmg/"
+          ln -s /Applications "dist/dmg/Applications"
+          hdiutil create -volname "LocallyFPS" -srcfolder "dist/dmg" -ov -format UDZO "dist/release/LocallyFPS-v${version}-macos-arm64.dmg"
+
+      - name: Stage Linux artifact
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          mkdir -p dist/release
+          cp dist/*.AppImage dist/release/
+
       - uses: actions/upload-artifact@v4
         with:
-          name: LocallyFPS-${{ matrix.platform }}
-          path: package/*.zip
+          name: release-${{ matrix.platform_id }}
+          path: dist/release/*
           if-no-files-found: error
+          compression-level: 0
 
-  release:
+  verify:
+    name: Verify release candidate
     needs: build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          pattern: LocallyFPS-*
+          pattern: release-*
           path: dist
           merge-multiple: true
-      - name: Checksums
-        run: (cd dist && sha256sum *.zip > SHA256SUMS.txt)
-      - name: Attest release archives
-        uses: actions/attest-build-provenance@v3
+      - name: Verify expected artifacts and write checksums
+        shell: bash
+        run: |
+          version="$(python -c 'from core.paths import APP_VERSION; print(APP_VERSION)')"
+          test -f "dist/LocallyFPS-v${version}-x86_64.AppImage"
+          test -f "dist/LocallyFPS-v${version}-windows-x64-setup.exe"
+          test -f "dist/LocallyFPS-v${version}-windows-x64-portable.zip"
+          test -f "dist/LocallyFPS-v${version}-macos-arm64.dmg"
+          (cd dist && sha256sum LocallyFPS-* > SHA256SUMS.txt)
+          cat dist/SHA256SUMS.txt
+      - uses: actions/attest-build-provenance@v3
         with:
-          subject-path: dist/*.zip
-      - name: publish
+          subject-path: |
+            dist/LocallyFPS-*
+            dist/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LocallyFPS-release-candidate
+          path: |
+            dist/LocallyFPS-*
+            dist/SHA256SUMS.txt
+          compression-level: 0
+
+      - name: Validate tagged version
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          code_version="$(python -c 'from core.paths import APP_VERSION; print(APP_VERSION)')"
+          test "${GITHUB_REF_NAME#v}" = "$code_version"
+
+      - name: Publish tagged release
+        if: startsWith(github.ref, 'refs/tags/')
         env:
           GH_TOKEN: ${{ github.token }}
+        shell: bash
         run: |
-          gh release create "$GITHUB_REF_NAME" dist/*.zip dist/SHA256SUMS.txt \
+          gh release create "$GITHUB_REF_NAME" dist/LocallyFPS-* dist/SHA256SUMS.txt \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
+            --verify-tag \
             --title "$GITHUB_REF_NAME" \
-            --notes-file <(awk '/^## /{if(found) exit; found=1; next} found' CHANGELOG.md)
+            --generate-notes

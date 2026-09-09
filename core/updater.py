@@ -15,8 +15,8 @@ from .colors import Color
 from .console import status, ask_yes_no
 from .i18n import _
 from .update_utils import (
-    GITHUB_API, get_platform_base_name,
-    get_platform_name, pick_asset, create_swap_script, create_appimage_swap_script,
+    GITHUB_API, get_platform_name, pick_platform_asset,
+    create_swap_script, create_appimage_swap_script,
     launch_swap, human_size, version_key,
 )
 from .deps import safe_extract_zip
@@ -88,8 +88,7 @@ def check_for_updates_detailed():
     asset = _appimage_asset(assets) if appimage else None
     installable = bool(asset and checksum and appimage)
     if asset is None:
-        base_name = get_platform_base_name()
-        asset = pick_asset(assets, base_name) if base_name else None
+        asset = pick_platform_asset(assets, platform_name)
     if not asset:
         raise UpdateCheckError(_("The latest release has no download for this platform."))
 
@@ -121,11 +120,11 @@ def check_for_updates():
     if latest <= current:
         return None
 
-    base_name = get_platform_base_name()
-    if not base_name:
+    platform_name = get_platform_name()
+    if not platform_name:
         raise UpdateCheckError(_("Updates are not available for this platform."))
 
-    asset = pick_asset(data.get("assets", []), base_name)
+    asset = pick_platform_asset(data.get("assets", []), platform_name)
     if not asset:
         raise UpdateCheckError(
             _("The latest release has no download for this platform.")

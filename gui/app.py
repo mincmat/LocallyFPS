@@ -2183,7 +2183,22 @@ def main(argv=None):
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--smoke-test", action="store_true")
     parser.add_argument("--network-smoke-test", action="store_true")
+    parser.add_argument("--dependency-smoke-test", action="store_true")
+    parser.add_argument("--pipeline-smoke-test", action="store_true")
     args, qt_args = parser.parse_known_args(argv)
+    if args.dependency_smoke_test or args.pipeline_smoke_test:
+        from core.selftest import dependency_smoke_test, pipeline_smoke_test
+        try:
+            if args.pipeline_smoke_test:
+                pipeline_smoke_test()
+            else:
+                dependency_smoke_test()
+            return 0
+        except Exception as exc:
+            stream = sys.stderr or getattr(sys, "__stderr__", None)
+            if stream is not None:
+                print(f"LocallyFPS self-test failed: {exc}", file=stream)
+            return 1
     if args.network_smoke_test:
         # This only verifies that the frozen application can initialize its
         # HTTPS stack. A remote service rate limit must not make packaging

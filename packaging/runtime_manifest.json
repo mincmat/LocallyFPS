@@ -1,0 +1,51 @@
+{
+  "runtime_revision": 1,
+  "rife": {
+    "version": "20221029",
+    "linux-x86_64": {
+      "url": "https://github.com/nihui/rife-ncnn-vulkan/releases/download/20221029/rife-ncnn-vulkan-20221029-ubuntu.zip",
+      "sha256": "1e2c7ee7fa7daa326542d50622f0afedc80cf6f1858bda411d16385ffa5cdf68",
+      "root": "rife-ncnn-vulkan-20221029-ubuntu"
+    },
+    "windows-x86_64": {
+      "url": "https://github.com/nihui/rife-ncnn-vulkan/releases/download/20221029/rife-ncnn-vulkan-20221029-windows.zip",
+      "sha256": "d8e4d772d26cd8006ef0ad0bc82eb191b53c68677d1ae2f42506d74cbbbea606",
+      "root": "rife-ncnn-vulkan-20221029-windows"
+    },
+    "macos-arm64": {
+      "url": "https://github.com/nihui/rife-ncnn-vulkan/releases/download/20221029/rife-ncnn-vulkan-20221029-macos.zip",
+      "sha256": "4a63a1f3c9c715773c57d2ee51df1b315ed20cd6c63103e45c483ecc4400b595",
+      "root": "rife-ncnn-vulkan-20221029-macos"
+    }
+  },
+  "ffmpeg": {
+    "linux-x86_64": {
+      "version": "8.1.2-51-g7ba069f4f1",
+      "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-09-09-14-51/ffmpeg-n8.1.2-51-g7ba069f4f1-linux64-gpl-8.1.tar.xz",
+      "sha256": "1288c1e46efce263651f5b10755f9ef11419a91558407fe61cc178aa9869fa1b",
+      "kind": "tar.xz"
+    },
+    "windows-x86_64": {
+      "version": "8.1.2-51-g7ba069f4f1",
+      "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-09-09-14-51/ffmpeg-n8.1.2-51-g7ba069f4f1-win64-gpl-8.1.zip",
+      "sha256": "4e40699fa864811312d6c1895ea4873beaf8475e1188563fee57fac860554601",
+      "kind": "zip"
+    },
+    "macos-arm64": {
+      "version": "b6.1.1",
+      "kind": "files",
+      "ffmpeg": {
+        "url": "https://github.com/eugeneware/ffmpeg-static/releases/download/b6.1.1/ffmpeg-darwin-arm64",
+        "sha256": "a90e3db6a3fd35f6074b013f948b1aa45b31c6375489d39e572bea3f18336584"
+      },
+      "ffprobe": {
+        "url": "https://github.com/eugeneware/ffmpeg-static/releases/download/b6.1.1/ffprobe-darwin-arm64",
+        "sha256": "bb2db6f5d8cef919da12fbf592119a987202a8c060a886f3cab091f9cab90b64"
+      },
+      "license": {
+        "url": "https://github.com/eugeneware/ffmpeg-static/releases/download/b6.1.1/darwin-arm64.LICENSE",
+        "sha256": "cb48bf09a11f5fb576cddb0431c8f5ed0a60157a9ec942adffc13907cbe083f2"
+      }
+    }
+  }
+}

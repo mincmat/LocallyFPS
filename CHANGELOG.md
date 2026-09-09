@@ -8,9 +8,16 @@
 - Add monochrome light and dark appearance modes, themed dialogs and
   borderless drop-down menus.
 - Apply language changes immediately and allow the output folder to be changed.
-- Add safe maintenance actions for resetting settings, reinstalling dependencies
-  and clearing temporary cache without deleting exported videos.
-- Add a reproducible Linux AppImage build for the desktop beta.
+- Add a full reset action with in-app confirmation and a return to initial setup.
+- Replace native message boxes with animated in-app dialogs.
+- Maintain complete graphical translations in English and neutral Spanish.
+- Add reproducible, offline-ready packages for Linux x86_64, Windows x64 and
+  macOS Apple Silicon with pinned runtime hashes.
+- Add Windows installer and portable ZIP packaging, Linux AppImage packaging
+  and an Apple Silicon DMG.
+- Add dependency and real 24-to-48 FPS interpolation tests for every frozen package.
+- Add a broader real-media qualification matrix for codecs, aspect ratios,
+  multiple audio tracks, interlaced, high-frame-rate and VFR sources.
 - Rename the internal `platform` package to `platforms` so it no longer shadows
   Python's standard library during GUI startup and packaging.
 - Bundle a trusted CA store so first-run FFmpeg and RIFE downloads work when an
