@@ -7,7 +7,7 @@ from pathlib import Path
 
 from PySide6.QtCore import (
     QEasingCurve, QObject, QParallelAnimationGroup, QPropertyAnimation, QRect,
-    QRectF, QSize, Qt, QThread, QTimer, QUrl, Signal, Slot,
+    QPoint, QRectF, QSize, Qt, QThread, QTimer, QUrl, Signal, Slot,
 )
 from PySide6.QtGui import (
     QColor, QDesktopServices, QFont, QIcon, QImage, QPainter, QPainterPath,
@@ -49,7 +49,7 @@ GUI_TEXT = {
         "default_fps": "Default FPS", "default_fps_hint": "Used when the application starts",
         "appearance": "Appearance", "output": "Output folder", "choose": "Choose",
         "engine": "Interpolation engine", "engine_hint": "Check FFmpeg, RIFE and the model",
-        "check": "Check", "reset": "Reset and maintenance", "cancel": "Cancel",
+        "check": "Check", "reset": "Reset settings", "cancel": "Cancel",
         "save": "Save changes", "continue": "Continue", "prepare": "Prepare LocallyFPS",
         "setup_title": "Initial setup", "setup_language": "Choose the application language.",
         "setup_engine": "Required components", "setup_engine_hint": "FFmpeg, RIFE and the model will be checked before continuing.",
@@ -68,6 +68,8 @@ GUI_TEXT = {
         "maintenance_safe": "Exported videos will not be deleted.", "reset_settings": "Reset settings",
         "reinstall_dependencies": "Reinstall dependencies", "clear_cache": "Clear temporary cache",
         "maintenance_confirm": "Do you want to continue?", "maintenance_done": "Maintenance completed",
+        "reset_confirm_title": "Reset settings?", "reset_confirm_detail": "Your language, appearance, output folder and default FPS will return to their defaults.",
+        "confirm_reset": "Reset settings",
         "dependencies_removed": "Dependencies were removed. They will be installed again now.",
         "settings_reset": "Settings were reset.", "cache_cleared": "Temporary cache was cleared.",
         "checking": "Checking components", "checking_hint": "Missing or damaged components will be installed again.",
@@ -86,7 +88,7 @@ GUI_TEXT = {
         "default_fps": "FPS predeterminados", "default_fps_hint": "Se usan al iniciar la aplicación",
         "appearance": "Apariencia", "output": "Carpeta de salida", "choose": "Elegir",
         "engine": "Motor de interpolación", "engine_hint": "Comprobar FFmpeg, RIFE y el modelo",
-        "check": "Comprobar", "reset": "Restablecer y mantenimiento", "cancel": "Cancelar",
+        "check": "Comprobar", "reset": "Restablecer configuración", "cancel": "Cancelar",
         "save": "Guardar cambios", "continue": "Continuar", "prepare": "Preparar LocallyFPS",
         "setup_title": "Configuración inicial", "setup_language": "Selecciona el idioma de la aplicación.",
         "setup_engine": "Componentes necesarios", "setup_engine_hint": "Se comprobarán FFmpeg, RIFE y el modelo antes de continuar.",
@@ -105,6 +107,8 @@ GUI_TEXT = {
         "maintenance_safe": "Los videos exportados no se eliminarán.", "reset_settings": "Restablecer configuración",
         "reinstall_dependencies": "Reinstalar dependencias", "clear_cache": "Borrar caché temporal",
         "maintenance_confirm": "¿Deseas continuar?", "maintenance_done": "Mantenimiento completado",
+        "reset_confirm_title": "¿Restablecer la configuración?", "reset_confirm_detail": "El idioma, la apariencia, la carpeta de salida y los FPS predeterminados volverán a sus valores iniciales.",
+        "confirm_reset": "Restablecer configuración",
         "dependencies_removed": "Se eliminaron las dependencias. Ahora se instalarán nuevamente.",
         "settings_reset": "Se restableció la configuración.", "cache_cleared": "Se borró la caché temporal.",
         "checking": "Comprobando componentes", "checking_hint": "Se instalarán nuevamente los componentes faltantes o dañados.",
@@ -143,11 +147,42 @@ def configure_combo_popup(combo):
 
 
 class ThemedComboBox(QComboBox):
-    """Reapply the popup palette after Qt creates its native menu container."""
+    """A small, application-styled picker instead of Qt's platform popup."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._popup = None
 
     def showPopup(self):
-        super().showPopup()
-        configure_combo_popup(self)
+        self.hidePopup()
+        popup = QFrame(None, Qt.WindowType.Popup | Qt.WindowType.FramelessWindowHint)
+        popup.setObjectName("cleanComboPopup")
+        popup.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        layout = QVBoxLayout(popup)
+        layout.setContentsMargins(6, 6, 6, 6)
+        layout.setSpacing(3)
+        for index in range(self.count()):
+            option = QPushButton(self.itemText(index))
+            option.setObjectName("comboOption")
+            option.setCheckable(True)
+            option.setChecked(index == self.currentIndex())
+            option.setMinimumHeight(38)
+            option.clicked.connect(lambda _checked=False, choice=index: self._choose_popup_item(choice))
+            layout.addWidget(option)
+        popup.setFixedWidth(max(self.width(), self.minimumWidth()))
+        popup.adjustSize()
+        popup.move(self.mapToGlobal(QPoint(0, self.height() + 6)))
+        popup.show()
+        self._popup = popup
+
+    def _choose_popup_item(self, index):
+        self.setCurrentIndex(index)
+        self.hidePopup()
+
+    def hidePopup(self):
+        if self._popup is not None:
+            self._popup.close()
+            self._popup = None
 
 
 class SetupWorker(QObject):
@@ -408,7 +443,7 @@ class SettingsDialog(QDialog):
         root.addWidget(engine)
         self.maintenance = QPushButton()
         self.maintenance.setObjectName("ghostButton")
-        self.maintenance.clicked.connect(self._show_maintenance)
+        self.maintenance.clicked.connect(self._request_reset)
         root.addWidget(self.maintenance)
         root.addStretch()
         actions = QHBoxLayout()
@@ -499,30 +534,9 @@ class SettingsDialog(QDialog):
         if selected:
             self.output_path.setText(selected)
 
-    def _show_maintenance(self):
-        dialog = QDialog(self)
-        dialog.setWindowTitle(tr("reset"))
-        layout = QVBoxLayout(dialog)
-        layout.setContentsMargins(24, 24, 24, 24)
-        hint = QLabel(tr("maintenance_safe"))
-        hint.setObjectName("muted")
-        layout.addWidget(hint)
-        actions = [
-            (tr("reset_settings"), "settings"),
-            (tr("reinstall_dependencies"), "dependencies"),
-            (tr("clear_cache"), "cache"),
-        ]
-        for label, action in actions:
-            button = QPushButton(label)
-            button.setObjectName("ghostButton")
-            button.clicked.connect(lambda _checked=False, value=action: self._maintenance_choice(dialog, value))
-            layout.addWidget(button)
-        dialog.exec()
-
-    def _maintenance_choice(self, dialog, action):
-        dialog.accept()
+    def _request_reset(self):
         self.reject()
-        self.maintenance_requested.emit(action)
+        self.maintenance_requested.emit("settings")
 
     def _repair(self):
         self.reject()
@@ -535,6 +549,38 @@ class SettingsDialog(QDialog):
         config.CONFIG["output_directory"] = self.output_path.text().strip()
         config.save_config()
         self.accept()
+
+
+class ResetConfirmationDialog(QDialog):
+    """Confirmation content rendered by the same in-app modal layer as Settings."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowFlags(Qt.WindowType.Widget)
+        self.setObjectName("confirmationDialog")
+        self.setMinimumWidth(430)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(34, 30, 34, 30)
+        layout.setSpacing(14)
+        title = QLabel(tr("reset_confirm_title"))
+        title.setObjectName("headline")
+        detail = QLabel(tr("reset_confirm_detail"))
+        detail.setObjectName("subtitle")
+        detail.setWordWrap(True)
+        layout.addWidget(title)
+        layout.addWidget(detail)
+        layout.addSpacing(6)
+        actions = QHBoxLayout()
+        actions.addStretch()
+        cancel = QPushButton(tr("cancel"))
+        cancel.setObjectName("ghostButton")
+        cancel.clicked.connect(self.reject)
+        confirm = QPushButton(tr("confirm_reset"))
+        confirm.setObjectName("primaryButton")
+        confirm.clicked.connect(self.accept)
+        actions.addWidget(cancel)
+        actions.addWidget(confirm)
+        layout.addLayout(actions)
 
 
 class MagicCanvas(QWidget):
@@ -1615,32 +1661,21 @@ class MainWindow(QMainWindow):
         if self.thread and self.thread.isRunning():
             QMessageBox.information(self, tr("working_close"), tr("working_close_detail"))
             return
-        if QMessageBox.question(
-            self, tr("reset"), tr("maintenance_confirm"),
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-        ) != QMessageBox.StandardButton.Yes:
+        if action != "settings":
             return
-        if action == "settings":
-            language = config.CONFIG.get("language", paths.DEFAULT_LANGUAGE)
-            config.CONFIG.clear()
-            config.CONFIG.update(config.DEFAULT_CONFIG)
-            config.CONFIG["language"] = language
-            config.CONFIG["onboarding_complete"] = not paths.any_dep_missing()
-            config.save_config()
-            apply_theme(QApplication.instance())
-            self.apply_language()
-            QMessageBox.information(self, tr("maintenance_done"), tr("settings_reset"))
-        elif action == "dependencies":
-            for directory in (paths._FFMPEG_DIR, paths._RIFE_DIR, paths.MODELS_DIR):
-                if directory:
-                    shutil.rmtree(directory, ignore_errors=True)
-            paths.ensure_dirs()
-            QMessageBox.information(self, tr("maintenance_done"), tr("dependencies_removed"))
-            self._show_repair()
-        elif action == "cache":
-            shutil.rmtree(paths.CACHE_DIR, ignore_errors=True)
-            paths.CACHE_DIR.mkdir(parents=True, exist_ok=True)
-            QMessageBox.information(self, tr("maintenance_done"), tr("cache_cleared"))
+        confirm = ResetConfirmationDialog(self)
+        confirm.accepted.connect(self._reset_settings)
+        confirm.rejected.connect(self.modal_overlay.dismiss)
+        self.modal_overlay.present(confirm)
+
+    def _reset_settings(self):
+        config.CONFIG.clear()
+        config.CONFIG.update(config.DEFAULT_CONFIG)
+        config.CONFIG["onboarding_complete"] = not paths.any_dep_missing()
+        config.save_config()
+        apply_theme(QApplication.instance())
+        self.apply_language()
+        self.modal_overlay.dismiss()
 
     def apply_language(self):
         if not hasattr(self, "videos_title"):
@@ -1738,6 +1773,9 @@ QComboBox, QLineEdit, QDoubleSpinBox { color: %(text)s; background: %(field)s; b
 QComboBox:hover, QLineEdit:hover, QDoubleSpinBox:hover { border-color: %(text)s; }
 QComboBox::drop-down { border: none; background: transparent; width: 28px; }
 QComboBox::down-arrow { image: none; border: none; width: 0; height: 0; }
+QFrame#cleanComboPopup { background: %(field)s; border: 1px solid %(border)s; border-radius: 12px; }
+QPushButton#comboOption { color: %(text)s; background: transparent; border: 0; border-radius: 8px; padding: 8px 12px; font-weight: 500; text-align: left; }
+QPushButton#comboOption:hover, QPushButton#comboOption:checked { color: %(selected_text)s; background: %(selected)s; }
 QDoubleSpinBox::up-button, QDoubleSpinBox::down-button { width: 0; border: none; background: transparent; }
 QFrame#comboPopup { background: %(field)s; border: 1px solid %(border)s; border-radius: 8px; padding: 0; }
 QComboBox QAbstractItemView, QAbstractItemView { color: %(text)s; background: %(field)s; alternate-background-color: %(field)s; border: 1px solid %(border)s; border-radius: 8px; outline: 0; selection-background-color: %(selected)s; selection-color: %(selected_text)s; padding: 0; }
