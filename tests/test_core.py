@@ -470,7 +470,7 @@ class UpdateCheckTests(unittest.TestCase):
         self.assertTrue(pick_platform_asset(assets, "macos")["name"].endswith("arm64.dmg"))
 
     @mock.patch("core.updater.check_for_updates")
-    def test_installed_beta_never_runs_directory_swap_updater(self, check):
+    def test_installed_build_never_runs_directory_swap_updater(self, check):
         old_frozen, old_layout = paths.IS_FROZEN, paths.LAYOUT_MODE
         paths.IS_FROZEN, paths.LAYOUT_MODE = True, "installed"
         try:

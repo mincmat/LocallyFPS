@@ -12,7 +12,7 @@ from pathlib import Path
 
 
 APP_NAME = "LocallyFPS"
-APP_VERSION = "4.0.0-beta.1"
+APP_VERSION = "4.0.0"
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 RESOURCE_DIR = BASE_DIR

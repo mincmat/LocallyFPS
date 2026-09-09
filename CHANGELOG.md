@@ -1,6 +1,6 @@
 # Changelog
 
-## 4.0.0-beta.1 - Unreleased
+## 4.0.0 - 2026-09-09
 
 - Add the first PySide6 desktop interface with drag-and-drop, video queue,
   explicit and custom target FPS, safe output naming, live progress and an animated
@@ -26,7 +26,6 @@
 - Separated read-only application resources from writable user data in preparation for the graphical desktop app.
 - Added native installed layouts for Linux/AppImage, Windows and macOS while preserving source and portable workflows.
 - Kept existing v3 portable data in place when detected, without silently moving or duplicating user videos.
-- Added prerelease-aware version comparison so v4 beta builds cannot be downgraded to the latest v3 release.
 
 ## 3.0.1 - 2026-09-06
 

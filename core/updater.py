@@ -271,10 +271,10 @@ def _prepare_update(zip_path):
 def run_updater():
     if paths.IS_FROZEN and paths.LAYOUT_MODE in {"installed", "custom"}:
         status(
-            _("Automatic updates are not enabled for installed beta builds yet."),
+            _("Automatic updates are not enabled for installed builds yet."),
             "WARN",
         )
-        status(_("Download the next beta from GitHub Releases."), "INFO")
+        status(_("Download the next version from GitHub Releases."), "INFO")
         if sys.stdin.isatty():
             input(f"\n  {Color.dim(_('Press Enter to continue...'))}")
         return
