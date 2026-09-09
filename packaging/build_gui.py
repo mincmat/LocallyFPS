@@ -41,6 +41,9 @@ def main():
     parser.add_argument("--spec-dir", type=Path, default=ROOT / "build" / "spec")
     args = parser.parse_args()
     runtime = args.runtime_dir.resolve()
+    dist_dir = args.dist_dir.resolve()
+    work_dir = args.work_dir.resolve()
+    spec_dir = args.spec_dir.resolve()
     required = (
         runtime / "deps" / "ffmpeg",
         runtime / "deps" / "rife",
@@ -48,18 +51,18 @@ def main():
     )
     if not all(item.exists() for item in required):
         raise SystemExit(f"Runtime is incomplete: {runtime}")
-    args.dist_dir.mkdir(parents=True, exist_ok=True)
-    args.work_dir.mkdir(parents=True, exist_ok=True)
-    args.spec_dir.mkdir(parents=True, exist_ok=True)
-    icon = args.work_dir / "locallyfps.png"
+    dist_dir.mkdir(parents=True, exist_ok=True)
+    work_dir.mkdir(parents=True, exist_ok=True)
+    spec_dir.mkdir(parents=True, exist_ok=True)
+    icon = work_dir / "locallyfps.png"
     _render_icon(icon)
     from PIL import Image
     with Image.open(icon) as source_icon:
         source_icon.save(
-            args.work_dir / "locallyfps.ico", format="ICO",
+            work_dir / "locallyfps.ico", format="ICO",
             sizes=[(16, 16), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)],
         )
-    for target in (args.dist_dir / "LocallyFPS", args.dist_dir / "LocallyFPS.app"):
+    for target in (dist_dir / "LocallyFPS", dist_dir / "LocallyFPS.app"):
         if target.exists():
             shutil.rmtree(target)
     command = [
@@ -75,8 +78,8 @@ def main():
         "--hidden-import", "platforms.linux",
         "--hidden-import", "platforms.windows",
         "--hidden-import", "platforms.macos",
-        "--distpath", str(args.dist_dir), "--workpath", str(args.work_dir),
-        "--specpath", str(args.spec_dir), str(ROOT / "locallyfps_gui.py"),
+        "--distpath", str(dist_dir), "--workpath", str(work_dir),
+        "--specpath", str(spec_dir), str(ROOT / "locallyfps_gui.py"),
     ]
     subprocess.run(command, cwd=ROOT, check=True)
 
