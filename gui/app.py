@@ -681,15 +681,15 @@ class MagicCanvas(QWidget):
                 # thumbnail geometry and passes over it at a calm, constant rate.
                 center = -0.38 + self._shimmer_phase * 1.76
                 gradient = QLinearGradient(
-                    frame.left() + frame.width() * (center - 0.52), 0,
-                    frame.left() + frame.width() * (center + 0.52), 0,
+                    frame.left() + frame.width() * (center - 0.82), 0,
+                    frame.left() + frame.width() * (center + 0.82), 0,
                 )
                 gradient.setColorAt(0.0, QColor(255, 255, 255, 0))
-                gradient.setColorAt(0.24, QColor(255, 255, 255, 0))
-                gradient.setColorAt(0.38, QColor(255, 255, 255, 13))
+                gradient.setColorAt(0.14, QColor(255, 255, 255, 0))
+                gradient.setColorAt(0.30, QColor(255, 255, 255, 13))
                 gradient.setColorAt(0.50, QColor(255, 255, 255, 34))
-                gradient.setColorAt(0.62, QColor(255, 255, 255, 13))
-                gradient.setColorAt(0.76, QColor(255, 255, 255, 0))
+                gradient.setColorAt(0.70, QColor(255, 255, 255, 13))
+                gradient.setColorAt(0.86, QColor(255, 255, 255, 0))
                 gradient.setColorAt(1.0, QColor(255, 255, 255, 0))
                 painter.fillRect(frame, gradient)
 
