@@ -954,6 +954,11 @@ class MainWindow(QMainWindow):
         self.output_paths = []
         self.worker = None
         self.thread = None
+        # The visible state is deliberately independent from whether Qt has
+        # already torn down its worker thread.  That prevents queued progress
+        # signals from turning a cancelled run back into a completed-looking
+        # one while the thread is winding down.
+        self._processing_state = "idle"
         self.setup_worker = None
         self.setup_thread = None
         self._build_ui()
@@ -1407,6 +1412,7 @@ class MainWindow(QMainWindow):
     def _start(self):
         if not self.video_paths or (self.thread and self.thread.isRunning()):
             return
+        self._processing_state = "running"
         self.output_paths = []
         self.start_button.setEnabled(False)
         self.start_button.setVisible(False)
@@ -1448,6 +1454,11 @@ class MainWindow(QMainWindow):
 
     @Slot(float, str, str)
     def _on_progress(self, progress, label, filename):
+        # A process may publish its final progress update just after Stop was
+        # pressed.  It is stale from the user's perspective, so do not let it
+        # revive the preview or overwrite the stopping/stopped status.
+        if self._processing_state != "running":
+            return
         self.magic.set_progress(progress)
         self.status_title.setText(label or tr("working"))
         self.status_detail.setText(filename or tr("preparing"))
@@ -1473,6 +1484,15 @@ class MainWindow(QMainWindow):
 
     @Slot(list, list)
     def _on_finished(self, completed, failed):
+        # If Stop was requested at the same time as a pipeline stage returned,
+        # cancellation wins.  In particular, never label the whole input list
+        # as completed merely because the worker happened to finish teardown.
+        if self._processing_state == "stopping":
+            self._on_cancelled(completed)
+            return
+        if self._processing_state != "running":
+            return
+        self._processing_state = "finished"
         self.magic.set_active(False)
         self.start_button.setVisible(True)
         self.start_button.setEnabled(True)
@@ -1503,6 +1523,7 @@ class MainWindow(QMainWindow):
     def _stop(self):
         if not self.worker or not self.thread or not self.thread.isRunning():
             return
+        self._processing_state = "stopping"
         self.stop_button.setEnabled(False)
         self.stop_button.setText(tr("stopping"))
         self.status_title.setText(tr("stopping"))
@@ -1511,7 +1532,12 @@ class MainWindow(QMainWindow):
 
     @Slot(list)
     def _on_cancelled(self, completed):
+        if self._processing_state == "stopped":
+            return
+        self._processing_state = "stopped"
         self.magic.set_active(False)
+        self.magic.set_progress(0)
+        self.magic.clear_preview()
         self.start_button.setVisible(True)
         self.start_button.setEnabled(True)
         self.stop_button.setVisible(False)
@@ -1622,7 +1648,10 @@ class MainWindow(QMainWindow):
         self.settings_button.setToolTip(tr("settings"))
         self.settings_button.setAccessibleName(tr("settings"))
         self._apply_onboarding_language()
-        if not (self.thread and self.thread.isRunning()):
+        if self._processing_state == "stopped":
+            self.status_title.setText(tr("stopped"))
+            self.status_detail.setText(tr("stopped_detail"))
+        elif not (self.thread and self.thread.isRunning()):
             if self.video_paths:
                 count = len(self.video_paths)
                 key = "queued_one" if count == 1 else "queued_many"
