@@ -49,7 +49,7 @@ GUI_TEXT = {
         "default_fps": "Default FPS", "default_fps_hint": "Used when the application starts",
         "appearance": "Appearance", "output": "Output folder", "choose": "Choose",
         "engine": "Interpolation engine", "engine_hint": "Check FFmpeg, RIFE and the model",
-        "check": "Check", "reset": "Reset settings", "cancel": "Cancel",
+        "check": "Check", "reset": "Reset all LocallyFPS", "cancel": "Cancel",
         "save": "Save changes", "continue": "Continue", "prepare": "Prepare LocallyFPS",
         "setup_title": "Initial setup", "setup_language": "Choose the application language.",
         "setup_engine": "Required components", "setup_engine_hint": "FFmpeg, RIFE and the model will be checked before continuing.",
@@ -68,8 +68,8 @@ GUI_TEXT = {
         "maintenance_safe": "Exported videos will not be deleted.", "reset_settings": "Reset settings",
         "reinstall_dependencies": "Reinstall dependencies", "clear_cache": "Clear temporary cache",
         "maintenance_confirm": "Do you want to continue?", "maintenance_done": "Maintenance completed",
-        "reset_confirm_title": "Reset settings?", "reset_confirm_detail": "Your language, appearance, output folder and default FPS will return to their defaults.",
-        "confirm_reset": "Reset settings",
+        "reset_confirm_title": "Reset all LocallyFPS?", "reset_confirm_detail": "This returns LocallyFPS to its initial state and opens setup again. Exported videos will not be deleted.",
+        "confirm_reset": "Reset all LocallyFPS",
         "dependencies_removed": "Dependencies were removed. They will be installed again now.",
         "settings_reset": "Settings were reset.", "cache_cleared": "Temporary cache was cleared.",
         "checking": "Checking components", "checking_hint": "Missing or damaged components will be installed again.",
@@ -88,7 +88,7 @@ GUI_TEXT = {
         "default_fps": "FPS predeterminados", "default_fps_hint": "Se usan al iniciar la aplicación",
         "appearance": "Apariencia", "output": "Carpeta de salida", "choose": "Elegir",
         "engine": "Motor de interpolación", "engine_hint": "Comprobar FFmpeg, RIFE y el modelo",
-        "check": "Comprobar", "reset": "Restablecer configuración", "cancel": "Cancelar",
+        "check": "Comprobar", "reset": "Restablecer todo LocallyFPS", "cancel": "Cancelar",
         "save": "Guardar cambios", "continue": "Continuar", "prepare": "Preparar LocallyFPS",
         "setup_title": "Configuración inicial", "setup_language": "Selecciona el idioma de la aplicación.",
         "setup_engine": "Componentes necesarios", "setup_engine_hint": "Se comprobarán FFmpeg, RIFE y el modelo antes de continuar.",
@@ -107,8 +107,8 @@ GUI_TEXT = {
         "maintenance_safe": "Los videos exportados no se eliminarán.", "reset_settings": "Restablecer configuración",
         "reinstall_dependencies": "Reinstalar dependencias", "clear_cache": "Borrar caché temporal",
         "maintenance_confirm": "¿Deseas continuar?", "maintenance_done": "Mantenimiento completado",
-        "reset_confirm_title": "¿Restablecer la configuración?", "reset_confirm_detail": "El idioma, la apariencia, la carpeta de salida y los FPS predeterminados volverán a sus valores iniciales.",
-        "confirm_reset": "Restablecer configuración",
+        "reset_confirm_title": "¿Restablecer todo LocallyFPS?", "reset_confirm_detail": "LocallyFPS volverá a su estado inicial y se abrirá la configuración inicial. Los videos exportados no se eliminarán.",
+        "confirm_reset": "Restablecer todo LocallyFPS",
         "dependencies_removed": "Se eliminaron las dependencias. Ahora se instalarán nuevamente.",
         "settings_reset": "Se restableció la configuración.", "cache_cleared": "Se borró la caché temporal.",
         "checking": "Comprobando componentes", "checking_hint": "Se instalarán nuevamente los componentes faltantes o dañados.",
@@ -1421,6 +1421,7 @@ class MainWindow(QMainWindow):
             return
         self.video_paths.clear()
         self.video_metadata.clear()
+        self.output_paths.clear()
         self.video_list.clear()
         self.pending_queue.clear()
         self._set_pending_queue_visible(False)
@@ -1637,11 +1638,24 @@ class MainWindow(QMainWindow):
     def _reset_settings(self):
         config.CONFIG.clear()
         config.CONFIG.update(config.DEFAULT_CONFIG)
-        config.CONFIG["onboarding_complete"] = not paths.any_dep_missing()
+        # A full reset deliberately returns to the first-run flow even when
+        # the components are already present, so the user can choose language
+        # and verify the interpolation engine again.
+        config.CONFIG["onboarding_complete"] = False
         config.save_config()
         apply_theme(QApplication.instance())
+        self._clear()
         self.apply_language()
         self.modal_overlay.dismiss()
+        self.pages.setCurrentWidget(self.onboarding_page)
+        self.setup_content.setCurrentIndex(0)
+        self.setup_steps.setText("1  ●────────○  2")
+        self.setup_progress.setValue(0)
+        self.setup_button.setEnabled(True)
+        self.setup_detail.setText("FFmpeg · Motor de IA · Modelo RIFE")
+        language_index = self.language_combo.findData(config.CONFIG["language"])
+        self.language_combo.setCurrentIndex(max(0, language_index))
+        self._apply_onboarding_language()
 
     def apply_language(self):
         if not hasattr(self, "videos_title"):
