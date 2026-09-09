@@ -6,8 +6,8 @@ import threading
 from pathlib import Path
 
 from PySide6.QtCore import (
-    QEasingCurve, QObject, QParallelAnimationGroup, QPropertyAnimation, QRect,
-    QPoint, QRectF, QSize, Qt, QThread, QTimer, QUrl, Signal, Slot,
+    QObject, QPropertyAnimation, QPoint, QRectF, QSize, Qt, QThread, QTimer,
+    QUrl, Signal, Slot,
 )
 from PySide6.QtGui import (
     QColor, QDesktopServices, QFont, QIcon, QImage, QPainter, QPainterPath,
@@ -257,38 +257,18 @@ class InAppModalOverlay(QWidget):
         self._opacity = QGraphicsOpacityEffect(self._surface)
         self._surface.setGraphicsEffect(self._opacity)
         self._fade_animation = QPropertyAnimation(self._opacity, b"opacity", self)
-        self._scale_animation = QPropertyAnimation(self._surface, b"geometry", self)
-        self._animation = QParallelAnimationGroup(self)
-        self._animation.addAnimation(self._fade_animation)
-        self._animation.addAnimation(self._scale_animation)
-        self._animation.finished.connect(self._on_animation_finished)
+        self._fade_animation.finished.connect(self._on_animation_finished)
         self._closing = False
 
     def set_blur_target(self, widget):
         self._blur_target = widget
 
-    @staticmethod
-    def _scaled_rect(rect, factor):
-        width = round(rect.width() * factor)
-        height = round(rect.height() * factor)
-        return QRect(
-            rect.center().x() - width // 2,
-            rect.center().y() - height // 2,
-            width,
-            height,
-        )
-
-    def _configure_animation(
-        self, start_opacity, end_opacity, start_rect, end_rect, duration, easing,
-    ):
-        self._animation.stop()
-        for animation in (self._fade_animation, self._scale_animation):
-            animation.setDuration(duration)
-            animation.setEasingCurve(easing)
+    def _fade(self, start_opacity, end_opacity, duration):
+        self._fade_animation.stop()
+        self._fade_animation.setDuration(duration)
         self._fade_animation.setStartValue(start_opacity)
         self._fade_animation.setEndValue(end_opacity)
-        self._scale_animation.setStartValue(start_rect)
-        self._scale_animation.setEndValue(end_rect)
+        self._fade_animation.start()
 
     def present(self, widget):
         self.dismiss(animated=False)
@@ -306,29 +286,15 @@ class InAppModalOverlay(QWidget):
         self.raise_()
         widget.show()
         self._content_layout.activate()
-        end_rect = self._surface.geometry()
-        # Keep the movement visible without the modal feeling like it jumps.
-        # Opening decelerates into place; closing accelerates away from it.
-        start_rect = self._scaled_rect(end_rect, 0.90)
-        self._surface.setGeometry(start_rect)
         self._opacity.setOpacity(0)
         self._closing = False
-        self._configure_animation(
-            0, 1, start_rect, end_rect, 240, QEasingCurve.Type.OutCubic,
-        )
-        self._animation.start()
+        self._fade(0, 1, 180)
 
     def dismiss(self, animated=True):
-        self._animation.stop()
+        self._fade_animation.stop()
         if animated and self.isVisible() and self._content is not None:
-            start_rect = self._surface.geometry()
-            end_rect = self._scaled_rect(start_rect, 0.90)
             self._closing = True
-            self._configure_animation(
-                self._opacity.opacity(), 0, start_rect, end_rect, 180,
-                QEasingCurve.Type.InOutCubic,
-            )
-            self._animation.start()
+            self._fade(self._opacity.opacity(), 0, 150)
             return
         self._dispose()
 
@@ -337,7 +303,7 @@ class InAppModalOverlay(QWidget):
             self._dispose()
 
     def _dispose(self):
-        self._animation.stop()
+        self._fade_animation.stop()
         self._closing = False
         if self._blur_target is not None:
             self._blur_target.setGraphicsEffect(None)
