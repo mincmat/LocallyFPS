@@ -131,9 +131,17 @@ def download_and_extract(url, dest_dir, description="Downloading", bar=None):
 
 
 def _maybe_chmod(path):
+    """Make a downloaded binary executable when the filesystem permits it.
+
+    AppImages run from a read-only squashfs mount (usually ``/tmp/.mount_*``).
+    The bundled files are already executable there, so a failed chmod must be
+    treated as harmless instead of aborting first-run setup.  Catch all
+    filesystem-level errors, not only PermissionError (EROFS is surfaced as
+    OSError on some Linux/filesystem combinations).
+    """
     try:
         path.chmod(0o755)
-    except PermissionError:
+    except OSError:
         pass
 
 
