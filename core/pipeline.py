@@ -15,6 +15,7 @@ from .reassemble import reassemble_video
 from .temp import TempManager
 from .disk import estimate_frame_storage, estimate_pipeline_storage
 from .jobs import PipelineJob
+from .runtime import stream_isatty
 
 PRESETS = {
     "balanced": {"encoder": "libx264", "ffmpeg_preset": "veryfast", "crf": 20,
@@ -221,7 +222,7 @@ def _show_success_screen(output_path, elapsed):
 
 
 def _wait_for_b():
-    if not (sys.platform.startswith("linux") and sys.stdin.isatty()):
+    if not (sys.platform.startswith("linux") and stream_isatty(sys.stdin)):
         return
     import termios
     import tty

@@ -4,6 +4,7 @@ import sys
 from .console import status, ask_yes_no
 from .i18n import _
 from .utils import human_size
+from .runtime import stream_isatty
 
 
 def check_disk_space(path, estimated_bytes):
@@ -18,7 +19,7 @@ def check_disk_space(path, estimated_bytes):
             if usage.free < estimated_bytes * 0.3:
                 status(_("Very low space. Aborting."), "ERROR")
                 sys.exit(1)
-            if not sys.stdin.isatty():
+            if not stream_isatty(sys.stdin):
                 status(_("Insufficient disk space for unattended processing. Aborting."), "ERROR")
                 sys.exit(1)
             if not ask_yes_no(_("Continue anyway? (might fail if disk fills up)"), default=False):

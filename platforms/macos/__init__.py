@@ -10,6 +10,7 @@ from core.colors import Color
 from core.console import status
 from core.gpu import classify_gpu
 from core.i18n import _
+from core.runtime import stream_isatty
 
 
 ENCODER_PRESETS = {
@@ -173,7 +174,7 @@ class MacOSPlatform:
             return -1
         disabled = disabled or set()
 
-        if not sys.stdin.isatty():
+        if not stream_isatty(sys.stdin):
             print(f"\n{Color.bold(prompt)}")
             selectable = [(i, opt) for i, opt in enumerate(options) if i not in disabled]
             for idx, (i, opt) in enumerate(selectable):

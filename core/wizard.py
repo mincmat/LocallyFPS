@@ -18,8 +18,9 @@ from .probe import probe_video_file, print_video_metadata
 from .progress import Spinner
 from .settings import _run_settings
 from .utils import format_fps
+from .runtime import stream_isatty
 
-if sys.platform.startswith("linux") and sys.stdin.isatty():
+if sys.platform.startswith("linux") and stream_isatty(sys.stdin):
     import termios as _termios
     _SAVED_TERMIOS = _termios.tcgetattr(sys.stdin.fileno())
     def _restore_terminal():
@@ -88,7 +89,7 @@ def prompt_for_video():
     sys.stdout.write(" " * sp + Color.dim(sub) + "\n\n")
     sys.stdout.flush()
 
-    if sys.stdin.isatty():
+    if stream_isatty(sys.stdin):
         hint = _("B to go back")
         i = plat.interactive_select_video(video_names, hint)
         if i < 0 or i >= len(video_files):
@@ -230,7 +231,7 @@ def prompt_for_fps(source_fps, video_name=None):
     sys.stdout.write(" " * ap + Color.dim(default_hint) + "\n")
     sys.stdout.flush()
 
-    if sys.platform.startswith("linux") and sys.stdin.isatty():
+    if sys.platform.startswith("linux") and stream_isatty(sys.stdin):
         return _prompt_fps_raw(source_fps)
 
     while True:
@@ -452,7 +453,7 @@ def main_cli(args):
         status(f"{_('The input file does not exist:')} {input_path}", "ERROR")
         sys.exit(1)
 
-    auto = args.yes or not sys.stdout.isatty()
+    auto = args.yes or not stream_isatty(sys.stdout)
     if not ensure_ffmpeg(auto_yes=auto):
         return False
     ensure_rife(auto_yes=auto)
@@ -534,14 +535,14 @@ def main():
     load_config()
     load_translations()
 
-    if is_first_run and sys.stdout.isatty():
+    if is_first_run and stream_isatty(sys.stdout):
         _show_language_selector()
 
-    if sys.stdout.isatty():
+    if stream_isatty(sys.stdout):
         from .deps import _setup_system_paths
         _setup_system_paths()
 
-    if sys.stdout.isatty() and any_dep_missing():
+    if stream_isatty(sys.stdout) and any_dep_missing():
         from platforms import get_platform
         plat = get_platform()
         term_w, term_h = shutil.get_terminal_size().columns, shutil.get_terminal_size().lines
@@ -601,7 +602,7 @@ def main():
     args = parse_args()
 
     if args.config:
-        if not sys.stdout.isatty():
+        if not stream_isatty(sys.stdout):
             print(_("Settings menu requires an interactive terminal."), file=sys.stderr)
             print(f"{_('Edit the config file directly:')} {paths.CONFIG_PATH}", file=sys.stderr)
             sys.exit(1)

@@ -12,6 +12,7 @@ except ImportError:
 from .colors import Color
 from .i18n import _
 from .utils import format_duration
+from .runtime import stream_isatty
 
 
 class ProgressBar:
@@ -22,7 +23,7 @@ class ProgressBar:
         self.width = width
         self.current = 0
         self.start_time = time.time()
-        self._enabled = sys.stdout.isatty()
+        self._enabled = stream_isatty(sys.stdout)
 
     def update(self, n=1):
         self.current += n
@@ -107,7 +108,7 @@ class PipelineBar:
         self.width = width
         self._box_w = box_width
         self._inner = box_width - 2
-        self._enabled = enabled if enabled is not None else sys.stdout.isatty()
+        self._enabled = enabled if enabled is not None else stream_isatty(sys.stdout)
         self._last = -1
         self._start_time = time.time()
         self._history = []  # [(time, progress), ...]
@@ -263,7 +264,7 @@ class Spinner:
 
     def __init__(self, msg, enabled=None):
         self.msg = msg
-        self._enabled = enabled if enabled is not None else sys.stdout.isatty()
+        self._enabled = enabled if enabled is not None else stream_isatty(sys.stdout)
         self._done = False
         self._idx = 0
         self._chars = Spinner._CHARS
@@ -303,7 +304,7 @@ class DependencyBar:
         self._box_w = box_width
         self._inner = box_width - 2
         self._bar_w = bar_width
-        self._enabled = enabled if enabled is not None else sys.stdout.isatty()
+        self._enabled = enabled if enabled is not None else stream_isatty(sys.stdout)
         self._last_pct = -1
         self._start = time.time()
         self._closed = False

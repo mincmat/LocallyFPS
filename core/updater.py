@@ -13,6 +13,7 @@ from pathlib import Path
 from . import paths
 from .colors import Color
 from .console import status, ask_yes_no
+from .runtime import stream_isatty
 from .i18n import _
 from .update_utils import (
     GITHUB_API, get_platform_name, pick_platform_asset,
@@ -67,9 +68,9 @@ def _current_appimage():
 def check_for_updates_detailed():
     """Return a verified-installation update description for the current app.
 
-    The check itself does not download or modify anything.  An AppImage is only
+    The check itself does not download or modify anything. An AppImage is only
     selected when LocallyFPS is actually running from an AppImage; otherwise
-    the established portable archive is reported as a manual download.
+    the platform installer is reported as a manual download.
     """
     data = _latest_release()
     latest_tag = data.get("tag_name", "")
@@ -275,7 +276,7 @@ def run_updater():
             "WARN",
         )
         status(_("Download the next version from GitHub Releases."), "INFO")
-        if sys.stdin.isatty():
+        if stream_isatty(sys.stdin):
             input(f"\n  {Color.dim(_('Press Enter to continue...'))}")
         return
     try:

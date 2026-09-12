@@ -1,9 +1,11 @@
 import os
 import sys
 
+from .runtime import stream_isatty
+
 
 class Color:
-    _ENABLED = sys.stdout.isatty() and not os.environ.get("NO_COLOR")
+    _ENABLED = stream_isatty(sys.stdout) and not os.environ.get("NO_COLOR")
 
     if _ENABLED:
         RESET = "\033[0m"

@@ -89,7 +89,6 @@ def pick_platform_asset(assets, platform_name):
         "linux": (r"^LocallyFPS-v.+-x86_64\.AppImage$",),
         "windows": (
             r"^LocallyFPS-v.+-windows-x64-setup\.exe$",
-            r"^LocallyFPS-v.+-windows-x64-portable\.zip$",
         ),
         "macos": (r"^LocallyFPS-v.+-macos-arm64\.dmg$",),
     }.get(platform_name, ())

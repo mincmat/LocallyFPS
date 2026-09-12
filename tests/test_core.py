@@ -44,6 +44,7 @@ from core.reassemble import (
     _validate_output,
     reassemble_video,
 )
+from core.runtime import stream_isatty
 from core.update_utils import create_appimage_swap_script, create_swap_script, parse_version, version_key
 from core.updater import UpdateCheckError, check_for_updates, check_for_updates_detailed, run_updater
 from core.wizard import _valid_cli_target_fps
@@ -461,13 +462,17 @@ class UpdateCheckTests(unittest.TestCase):
 
         assets = [
             {"name": "LocallyFPS-v4.0.0-x86_64.AppImage"},
-            {"name": "LocallyFPS-v4.0.0-windows-x64-portable.zip"},
             {"name": "LocallyFPS-v4.0.0-windows-x64-setup.exe"},
             {"name": "LocallyFPS-v4.0.0-macos-arm64.dmg"},
         ]
         self.assertTrue(pick_platform_asset(assets, "linux")["name"].endswith(".AppImage"))
         self.assertTrue(pick_platform_asset(assets, "windows")["name"].endswith("setup.exe"))
         self.assertTrue(pick_platform_asset(assets, "macos")["name"].endswith("arm64.dmg"))
+
+
+class RuntimeGuardTests(unittest.TestCase):
+    def test_missing_gui_standard_stream_is_not_interactive(self):
+        self.assertFalse(stream_isatty(None))
 
     @mock.patch("core.updater.check_for_updates")
     def test_installed_build_never_runs_directory_swap_updater(self, check):
