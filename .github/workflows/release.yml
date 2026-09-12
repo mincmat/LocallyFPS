@@ -21,7 +21,7 @@ jobs:
             label: Linux x86_64 AppImage
             platform_id: linux-x86_64
           - os: windows-2022
-            label: Windows x64 installer
+            label: Windows x64 portable
             platform_id: windows-x86_64
           - os: macos-latest
             label: macOS Apple Silicon DMG
@@ -120,31 +120,28 @@ jobs:
           file "$exe" | grep -q arm64
           find "dist/LocallyFPS.app" -name rife-ncnn-vulkan -exec file {} \; | grep -q arm64
 
-      - name: Package Windows installer
+      - name: Package Windows portable build
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           $version = python -c "from core.paths import APP_VERSION; print(APP_VERSION)"
-          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
-          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress }
           New-Item -ItemType Directory -Force "dist/release" | Out-Null
-          & $iscc "/DMyAppVersion=$version" "/DSourceDir=$pwd\dist\LocallyFPS" "/DOutputDir=$pwd\dist\release" "/DSetupIcon=$pwd\build\frozen\locallyfps.ico" "packaging\windows\LocallyFPS.iss"
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Copy-Item -Recurse "dist/LocallyFPS" "dist/LocallyFPS-portable"
+          New-Item -ItemType File "dist/LocallyFPS-portable/.locallyfps-portable" | Out-Null
+          Compress-Archive -CompressionLevel Optimal -Path "dist/LocallyFPS-portable" -DestinationPath "dist/release/LocallyFPS-v$version-windows-x64-portable.zip"
 
-      - name: Test installed setup package
+      - name: Test extracted Windows portable package
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           $version = python -c "from core.paths import APP_VERSION; print(APP_VERSION)"
-          $setup = "$pwd/dist/release/LocallyFPS-v$version-windows-x64-setup.exe"
-          $installDir = "$env:RUNNER_TEMP/LocallyFPS-installed"
-          $installer = Start-Process -FilePath $setup -ArgumentList @(
-            "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-", "/DIR=$installDir"
-          ) -Wait -PassThru
-          if ($installer.ExitCode -ne 0) { exit $installer.ExitCode }
-          & "$installDir/LocallyFPS.exe" --dependency-smoke-test
+          $portableDir = "$env:RUNNER_TEMP/LocallyFPS-portable-test"
+          Expand-Archive "dist/release/LocallyFPS-v$version-windows-x64-portable.zip" $portableDir
+          $portableExe = "$portableDir/LocallyFPS-portable/LocallyFPS.exe"
+          if (-not (Test-Path "$portableDir/LocallyFPS-portable/.locallyfps-portable")) { exit 1 }
+          & $portableExe --dependency-smoke-test
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          & "$installDir/LocallyFPS.exe" --pipeline-smoke-test
+          & $portableExe --pipeline-smoke-test
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Sign and package macOS DMG
@@ -204,7 +201,7 @@ jobs:
         run: |
           version="$(python -c 'from core.paths import APP_VERSION; print(APP_VERSION)')"
           test -f "dist/LocallyFPS-v${version}-x86_64.AppImage"
-          test -f "dist/LocallyFPS-v${version}-windows-x64-setup.exe"
+          test -f "dist/LocallyFPS-v${version}-windows-x64-portable.zip"
           test -f "dist/LocallyFPS-v${version}-macos-arm64.dmg"
           (cd dist && sha256sum LocallyFPS-* > SHA256SUMS.txt)
           cat dist/SHA256SUMS.txt
@@ -237,7 +234,7 @@ jobs:
           if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release upload "$GITHUB_REF_NAME" dist/LocallyFPS-* dist/SHA256SUMS.txt \
               --repo "$GITHUB_REPOSITORY" --clobber
-            gh release delete-asset "$GITHUB_REF_NAME" "LocallyFPS-v${GITHUB_REF_NAME#v}-windows-x64-portable.zip" \
+            gh release delete-asset "$GITHUB_REF_NAME" "LocallyFPS-v${GITHUB_REF_NAME#v}-windows-x64-setup.exe" \
               --repo "$GITHUB_REPOSITORY" --yes 2>/dev/null || true
           else
             gh release create "$GITHUB_REF_NAME" dist/LocallyFPS-* dist/SHA256SUMS.txt \

@@ -23,7 +23,7 @@ Release candidates and tagged releases are built for these primary platforms:
 | Platform | Package | Architecture |
 |---|---|---|
 | Linux | AppImage | x86_64 |
-| Windows | Installer (`setup.exe`) | x64 |
+| Windows | Portable ZIP | x64 |
 | macOS | DMG | Apple Silicon / arm64 |
 
 Official packages contain FFmpeg, FFprobe, `rife-ncnn-vulkan` and the RIFE v4.6 model. They do not require a dependency download during the first setup. Exact upstream versions and SHA-256 hashes are pinned in [`packaging/runtime_manifest.json`](packaging/runtime_manifest.json).
@@ -41,7 +41,7 @@ chmod +x LocallyFPS-v4.0.0-x86_64.AppImage
 
 ### Windows
 
-Run the installer. Settings, cache and working files are stored in your Windows user profile.
+Extract the ZIP and run `LocallyFPS.exe`. Settings, cache and working files are kept inside the extracted `LocallyFPS-portable` folder.
 
 ### macOS
 
@@ -57,7 +57,7 @@ Installed packages keep settings and temporary files outside the read-only appli
 | Windows | `%LOCALAPPDATA%\LocallyFPS` | `%LOCALAPPDATA%\LocallyFPS\cache` |
 | macOS | `~/Library/Application Support/LocallyFPS` | `~/Library/Caches/LocallyFPS` |
 
-Set `LOCALLYFPS_HOME` to choose a custom writable root.
+Set `LOCALLYFPS_HOME` to choose a custom writable root. The portable package enables its self-contained layout automatically.
 
 ## Source development
 

@@ -462,11 +462,11 @@ class UpdateCheckTests(unittest.TestCase):
 
         assets = [
             {"name": "LocallyFPS-v4.0.0-x86_64.AppImage"},
-            {"name": "LocallyFPS-v4.0.0-windows-x64-setup.exe"},
+            {"name": "LocallyFPS-v4.0.0-windows-x64-portable.zip"},
             {"name": "LocallyFPS-v4.0.0-macos-arm64.dmg"},
         ]
         self.assertTrue(pick_platform_asset(assets, "linux")["name"].endswith(".AppImage"))
-        self.assertTrue(pick_platform_asset(assets, "windows")["name"].endswith("setup.exe"))
+        self.assertTrue(pick_platform_asset(assets, "windows")["name"].endswith("portable.zip"))
         self.assertTrue(pick_platform_asset(assets, "macos")["name"].endswith("arm64.dmg"))
 
 

@@ -70,7 +70,7 @@ def check_for_updates_detailed():
 
     The check itself does not download or modify anything. An AppImage is only
     selected when LocallyFPS is actually running from an AppImage; otherwise
-    the platform installer is reported as a manual download.
+    the platform package is reported as a manual download.
     """
     data = _latest_release()
     latest_tag = data.get("tag_name", "")
